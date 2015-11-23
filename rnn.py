@@ -29,7 +29,6 @@ class RNN(object):
     def __iter__(self):
         """"""
         def iterHelper():
-            y = np.random.randn(self.layers[0], 1)
             y = 1
             while True:
                 y = self.step(y)
@@ -37,6 +36,7 @@ class RNN(object):
         return iterHelper()
 
     def decode(self, y):
+
         return np.argmax(y)
 
     def encode(self, x):
@@ -47,7 +47,6 @@ class RNN(object):
 def sigmoid(z):
     """Sigmoid function evaluated at z."""
     return 1.0/(1.0+np.exp(-z))
-
 
 
 def main():
