@@ -24,7 +24,7 @@ with open(dictFile) as f:
 char_to_code_dict, code_to_char_dict = dicts
         
 
-datafile = "rnn-theano-150-79-2015-12-09-16-40-02.npz"
+datafile = "rnn-theano-150-82-2015-12-11-00-27-39.npz"
 model = RNNTheano(79, hidden_dim=150)
 load_model_parameters_theano('rnn-tutorial-rnnlm/data/{0}'.format(datafile), model)
 
@@ -43,12 +43,12 @@ def generate_sentence(model):
             code_to_char_dict[sampled_letter]
         except:
             continue
-            
+
         new_sentence.append(sampled_letter)
     sentence_str = [code_to_char_dict[x] for x in new_sentence[1:-1]]
     return sentence_str
 
-num_sentences = 10
+num_sentences = 5
  
 for i in range(num_sentences):
     sent = []

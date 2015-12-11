@@ -8,6 +8,7 @@ import numpy as np
 import nltk
 import os
 import time
+import lstm_theano
 from datetime import datetime
 from utils import *
 from rnn_theano import RNNTheano
@@ -16,7 +17,7 @@ from rnn_theano import RNNTheano
 #_VOCABULARY_SIZE = int(os.environ.get('VOCABULARY_SIZE', '8000'))
 _HIDDEN_DIM = int(os.environ.get('HIDDEN_DIM', '150'))
 _LEARNING_RATE = float(os.environ.get('LEARNING_RATE', '0.005'))
-_NEPOCH = int(os.environ.get('NEPOCH', '100'))
+_NEPOCH = int(os.environ.get('NEPOCH', '1000'))
 _MODEL_FILE = os.environ.get('MODEL_FILE')
 
 
@@ -29,7 +30,7 @@ def decode_to_character(x):
 
     return chr(np.argmax(x))
     
-def train_with_sgd(model, X_train, y_train, learning_rate=0.005, nepoch=1, evaluate_loss_after=1):
+def train_with_sgd(model, X_train, y_train, learning_rate=0.005, nepoch=1, evaluate_loss_after=100):
     # We keep track of the losses so we can plot them later
     losses = []
     num_examples_seen = 0
@@ -55,28 +56,34 @@ def train_with_sgd(model, X_train, y_train, learning_rate=0.005, nepoch=1, evalu
 
 line_start_token = "LINE_START"
 line_end_token = "LINE_END"
-ALPHABET_LENGTH = 2
+ALPHABET_LENGTH = 1
 
 # Read the data and append SENTENCE_START and SENTENCE_END tokens
 print "Reading CSV file..."
 with open('mlb.xml', 'rb') as f:
-    reader = csv.reader(f, skipinitialspace=True)
-    #reader.next()
     char_to_code_dict = {line_start_token: 0, line_end_token: 1}
     code_to_char_dict = {0: line_start_token, 1: line_end_token}
-    sentences = []
-    for s in reader:
-        c_list = [line_start_token]
-        trainingLine = s[0]
-        for c in trainingLine:
-            c_list.append(c)
-            if c not in char_to_code_dict:
-                char_to_code_dict[c] = ALPHABET_LENGTH
-                code_to_char_dict[ALPHABET_LENGTH] = c
-                ALPHABET_LENGTH+=1
-        c_list.append(line_end_token)
-        sentences.append(c_list)
-    ALPHABET_LENGTH-=1
+    # sentences = []
+    # for trainingLine in f:
+    #     c_list = [line_start_token]
+    #     for c in trainingLine:
+    #         c_list.append(c)
+    #         if c not in char_to_code_dict:
+    #             ALPHABET_LENGTH+=1
+    #             char_to_code_dict[c] = ALPHABET_LENGTH
+    #             code_to_char_dict[ALPHABET_LENGTH] = c
+    #     c_list.append(line_end_token)
+    #     sentences.append(c_list)
+    filestring = f.read()
+    c_list = [line_start_token]
+    for c in filestring:
+        c_list.append(c)
+        if c not in char_to_code_dict:
+            ALPHABET_LENGTH+=1
+            char_to_code_dict[c] = ALPHABET_LENGTH
+            code_to_char_dict[ALPHABET_LENGTH] = c
+    c_list.append(line_end_token)
+    sentences = [c_list]
 
 print "Parsed %d lists of characters." % (len(sentences))
 print "Found {0} characters: {1}".format(ALPHABET_LENGTH, char_to_code_dict.keys())
@@ -90,20 +97,20 @@ print "Wrote character-to-code dicts to {0}".format(dictFile)
 
 
 
-#sentences = sentences[:10]
 # Create the training data
-X_train = np.asarray([[char_to_code_dict[c] for c in sent[:-1]] for sent in sentences])
-y_train = np.asarray([[char_to_code_dict[c] for c in sent[1:]] for sent in sentences])
+X_train = np.asarray([[char_to_code_dict[c] for c in sent[:-1]] for sent in sentences], dtype='int32')
+y_train = np.asarray([[char_to_code_dict[c] for c in sent[1:]] for sent in sentences], dtype='int32')
 
 print "Created training set."
 
-model = RNNTheano(ALPHABET_LENGTH, hidden_dim=_HIDDEN_DIM)
+#model = RNNTheano(ALPHABET_LENGTH+1, hidden_dim=_HIDDEN_DIM)
+model = lstm_theano.LSTMTheano(ALPHABET_LENGTH+1, hidden_dim=_HIDDEN_DIM)
 t1 = time.time()
 model.sgd_step(X_train[0], y_train[0], _LEARNING_RATE)
 t2 = time.time()
 print "SGD Step time: %f milliseconds" % ((t2 - t1) * 1000.)
 
-if _MODEL_FILE != None:
-    load_model_parameters_theano(_MODEL_FILE, model)
+# if _MODEL_FILE != None:
+#     load_model_parameters_theano(_MODEL_FILE, model)
 
 train_with_sgd(model, X_train, y_train, nepoch=_NEPOCH, learning_rate=_LEARNING_RATE)

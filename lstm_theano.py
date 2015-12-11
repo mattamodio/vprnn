@@ -4,7 +4,7 @@ import theano.tensor as T
 from utils import *
 import operator
 
-class RNNTheano:
+class LSTMTheano:
     
     def __init__(self, word_dim, hidden_dim=100, bptt_truncate=4):
         # Assign instance variables
@@ -66,5 +66,4 @@ class RNNTheano:
     def calculate_loss(self, X, Y):
         # Divide calculate_loss by the number of words
         num_words = np.sum([len(y) for y in Y])
-        return self.calculate_total_loss(X,Y)/float(num_words)   
-
+        return self.calculate_total_loss(X,Y)/float(num_words)
