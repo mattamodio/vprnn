@@ -1,5 +1,5 @@
 import sys
-sys.path.append('rnn-tutorial-rnnlm')
+#sys.path.append('rnn-tutorial-rnnlm')
 import csv
 import itertools
 import operator
@@ -10,8 +10,15 @@ import time
 import ast
 from datetime import datetime
 from utils import *
-from rnn_theano import RNNTheano
-from utils import load_model_parameters_theano, save_model_parameters_theano
+from lstm_theano import LSTMTheano
+
+
+
+DATAFILE = "rnn-theano-100-82-2015-12-12-15-37-36.npz"
+load_model_parameters_lstm('saved_model_parameters/{0}'.format(DATAFILE))
+#MODEL = LSTMTheano(int(DATAFILE.split('-')[3]), hidden_dim=int(DATAFILE.split('-')[2]))
+#load_model_parameters_lstm('../rnn-tutorial-rnnlm/data/{0}'.format(DATAFILE))
+
 
 line_start_token = "LINE_START"
 line_end_token = "LINE_END"
@@ -22,11 +29,8 @@ with open(dictFile) as f:
         line = ast.literal_eval(line)
         dicts.append(line)
 char_to_code_dict, code_to_char_dict = dicts
-        
 
-datafile = "rnn-theano-150-82-2015-12-11-00-27-39.npz"
-model = RNNTheano(79, hidden_dim=150)
-load_model_parameters_theano('rnn-tutorial-rnnlm/data/{0}'.format(datafile), model)
+
 
 def generate_sentence(model):
     # We start the sentence with the start token
@@ -52,5 +56,5 @@ num_sentences = 5
  
 for i in range(num_sentences):
     sent = []
-    sent = generate_sentence(model)
+    sent = generate_sentence(MODEL)
     print "".join(sent)

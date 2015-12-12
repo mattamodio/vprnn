@@ -8,28 +8,18 @@ import numpy as np
 import nltk
 import os
 import time
-import lstm_theano
 from datetime import datetime
 from utils import *
 from rnn_theano import RNNTheano
+from lstm_theano import LSTMTheano
 
 
 #_VOCABULARY_SIZE = int(os.environ.get('VOCABULARY_SIZE', '8000'))
-_HIDDEN_DIM = int(os.environ.get('HIDDEN_DIM', '150'))
+_HIDDEN_DIM = int(os.environ.get('HIDDEN_DIM', '100'))
 _LEARNING_RATE = float(os.environ.get('LEARNING_RATE', '0.005'))
 _NEPOCH = int(os.environ.get('NEPOCH', '1000'))
 _MODEL_FILE = os.environ.get('MODEL_FILE')
 
-
-def encode_character(c):
-    x = np.zeros((ALPHABET_LENGTH,1), dtype='int32')
-    x[ord(c)] = 1
-    return x
-
-def decode_to_character(x):
-
-    return chr(np.argmax(x))
-    
 def train_with_sgd(model, X_train, y_train, learning_rate=0.005, nepoch=1, evaluate_loss_after=100):
     # We keep track of the losses so we can plot them later
     losses = []
@@ -85,6 +75,7 @@ with open('mlb.xml', 'rb') as f:
     c_list.append(line_end_token)
     sentences = [c_list]
 
+sentences[0] = sentences[0][:100]
 print "Parsed %d lists of characters." % (len(sentences))
 print "Found {0} characters: {1}".format(ALPHABET_LENGTH, char_to_code_dict.keys())
 
@@ -103,8 +94,8 @@ y_train = np.asarray([[char_to_code_dict[c] for c in sent[1:]] for sent in sente
 
 print "Created training set."
 
-#model = RNNTheano(ALPHABET_LENGTH+1, hidden_dim=_HIDDEN_DIM)
-model = lstm_theano.LSTMTheano(ALPHABET_LENGTH+1, hidden_dim=_HIDDEN_DIM)
+model = RNNTheano(ALPHABET_LENGTH+1, hidden_dim=_HIDDEN_DIM)
+#model = lstm_theano.LSTMTheano(ALPHABET_LENGTH+1, hidden_dim=_HIDDEN_DIM)
 t1 = time.time()
 model.sgd_step(X_train[0], y_train[0], _LEARNING_RATE)
 t2 = time.time()
