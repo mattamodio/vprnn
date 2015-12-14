@@ -1,5 +1,4 @@
 import sys
-#sys.path.append('rnn-tutorial-rnnlm')
 import csv
 import itertools
 import operator
@@ -10,15 +9,11 @@ import time
 import ast
 from datetime import datetime
 from utils import *
-from lstm_theano import LSTMTheano
+from stack_lstm import StackLSTMTheano
 
 
 
-DATAFILE = "lstm-theano-500-57-2015-12-13-12-03-35.npz"
-DATAFILE = "lstm-theano-500-57-2015-12-13-04-41-59.npz"
-MODEL = load_model_parameters_lstm('saved_model_parameters/{0}'.format(DATAFILE))
-#MODEL = LSTMTheano(int(DATAFILE.split('-')[3]), hidden_dim=int(DATAFILE.split('-')[2]))
-#load_model_parameters_lstm('../rnn-tutorial-rnnlm/data/{0}'.format(DATAFILE))
+DATAFILE = "lstm-theano-500-57-2015-12-13-14-24-48.npz"
 
 
 line_start_token = "LINE_START"
@@ -30,6 +25,8 @@ with open(dictFile) as f:
         line = ast.literal_eval(line)
         dicts.append(line)
 char_to_code_dict, code_to_char_dict = dicts
+
+MODEL = load_model_parameters_lstm('saved_model_parameters/{0}'.format(DATAFILE), char_to_code_dict=char_to_code_dict)
 
 
 
