@@ -11,30 +11,7 @@ def one_hot(x, dimensions):
     tmp[x] = 1
     return tmp.reshape(1, dimensions, 1)
 
-<<<<<<< HEAD
 def generate_sentence(model, char_to_code_dict, code_to_char_dict, line_start_token, line_end_token, alphabet_length, sample_limit=sys.maxint):
-=======
-DATAFILE = "lstm-theano-500-57-2015-12-13-12-03-35.npz"
-DATAFILE = "lstm-theano-500-57-2015-12-13-04-41-59.npz"
-MODEL = load_model_parameters_lstm('saved_model_parameters/{0}'.format(DATAFILE))
-#MODEL = LSTMTheano(int(DATAFILE.split('-')[3]), hidden_dim=int(DATAFILE.split('-')[2]))
-#load_model_parameters_lstm('../rnn-tutorial-rnnlm/data/{0}'.format(DATAFILE))
-
-
-line_start_token = "LINE_START"
-line_end_token = "LINE_END"
-dictFile = 'dictFile.txt'
-with open(dictFile) as f:
-    dicts = []
-    for line in f:
-        line = ast.literal_eval(line)
-        dicts.append(line)
-char_to_code_dict, code_to_char_dict = dicts
-
-
-
-def generate_sentence(model):
->>>>>>> e68de4e0e9f1546c3950bb7573c0ea1a396e959b
     # We start the sentence with the start token
     new_sentence = one_hot(char_to_code_dict[line_start_token], alphabet_length)
     # Repeat until we get an end token
@@ -62,7 +39,6 @@ def generate_sentence(model):
 
     return sentence_str
 
-<<<<<<< HEAD
 
 
 if __name__=="__main__":
@@ -91,11 +67,3 @@ if __name__=="__main__":
         print
 
 
-=======
-num_sentences = 20
- 
-for i in range(num_sentences):
-    sent = []
-    sent = generate_sentence(MODEL)
-    print "".join(sent)
->>>>>>> e68de4e0e9f1546c3950bb7573c0ea1a396e959b

@@ -14,11 +14,11 @@ from generate_from_lstm_with_stack import generate_sentence
 
 #_VOCABULARY_SIZE = int(os.environ.get('VOCABULARY_SIZE', '8000'))
 _HIDDEN_DIM = int(os.environ.get('HIDDEN_DIM', '500'))
-_LEARNING_RATE = float(os.environ.get('LEARNING_RATE', '0.01'))
+_LEARNING_RATE = float(os.environ.get('LEARNING_RATE', '0.001'))
 _NEPOCH = int(os.environ.get('NEPOCH', '100'))
 
 _MODEL_FILE = os.environ.get('MODEL_FILE', )
-#_MODEL_FILE = os.environ.get('MODEL_FILE', 'saved_model_parameters/lstm-theano-500-82-2016-02-14-13-23-41.npz')
+_MODEL_FILE = os.environ.get('MODEL_FILE', 'saved_model_parameters/lstm-_with_stack-theano-500-82-2016-02-15-14-11-47.npz')
 
 def one_hot(x, dimensions):
     tmp = np.zeros(dimensions)

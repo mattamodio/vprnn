@@ -12,7 +12,7 @@ from utils_lstm_with_stack import *
 from lstm_with_stack import LSTM_with_stack
 
 
-DATAFILE = "lstm-_with_stack-theano-300-82-2016-02-14-18-04-43.npz"
+DATAFILE = "lstm-_with_stack-theano-500-82-2016-02-15-14-11-47.npz"
 
 def one_hot(x, dimensions):
     tmp = np.zeros(dimensions).astype('int32')
@@ -73,7 +73,7 @@ if __name__=="__main__":
      
     for i in range(num_sentences):
         sent = []
-        sent = generate_sentence(MODEL, char_to_code_dict, code_to_char_dict, line_start_token, line_end_token, ALPHABET_LENGTH, sample_limit=100)
+        sent = generate_sentence(MODEL, char_to_code_dict, code_to_char_dict, line_start_token, line_end_token, ALPHABET_LENGTH, sample_limit=500)
         print "".join(sent)
         print
 
