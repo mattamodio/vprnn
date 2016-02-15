@@ -1,24 +1,18 @@
 import sys
+sys.path.append('rnn-tutorial-rnnlm')
 import numpy as np
 import theano as theano
 import theano.tensor as T
 from utils import *
 import operator
-from theano import tensor as T, function, printing, typed_list
-
-# theano.config.optimizer='None'
-# theano.config.compute_test_value = 'raise'
 
 class LSTMTheano:
     
-    def __init__(self, word_dim, hidden_dim=100, minibatch_size=1, bptt_truncate=4):
+    def __init__(self, word_dim, hidden_dim=100, bptt_truncate=4):
         # Assign instance variables
         self.word_dim = word_dim
         self.hidden_dim = hidden_dim
-        self.minibatch_size = minibatch_size
         self.bptt_truncate = bptt_truncate
-        
-
         # Randomly initialize the network parameters
         W_x_i = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, word_dim))
         W_h_i = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
@@ -29,7 +23,6 @@ class LSTMTheano:
         W_x_g = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, word_dim))
         W_h_g = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
         W_hy = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (word_dim, hidden_dim))
-
         # Theano: Created shared variables
         self.W_x_i = theano.shared(name='W_x_i', value=W_x_i.astype(theano.config.floatX))
         self.W_h_i = theano.shared(name='W_h_i', value=W_h_i.astype(theano.config.floatX))
@@ -45,34 +38,49 @@ class LSTMTheano:
         self.__theano_build__()
     
     def __theano_build__(self):
-        W_x_i,W_h_i,W_x_o,W_h_o,W_x_f,W_h_f,W_x_g,W_h_g,W_hy = self.W_x_i,self.W_h_i,self.W_x_o,self.W_h_o,self.W_x_f,self.W_h_f,self.W_x_g,self.W_h_g,self.W_hy
-        
-        x = T.tensor3('x')
-        y = T.tensor3('y')
+        #U, V, W = self.U, self.V, self.W
+        W_x_i, W_h_i = self.W_x_i, self.W_h_i
+        W_x_o, W_h_o = self.W_x_o, self.W_h_o
+        W_x_f, W_h_f = self.W_x_f, self.W_h_f
+        W_x_g, W_h_g = self.W_x_g, self.W_h_g
+        W_hy = self.W_hy
+        x = T.ivector('x')
+        y = T.ivector('y')
 
+
+        #def forward_prop_step(x_t, h_t_prev, c_t_prev, W_x_i, W_h_i, W_x_o, W_h_o, W_x_f, W_h_f, W_x_g, W_h_g, W_hy):
         def forward_prop_step(x_t, h_t_prev, c_t_prev):
-            i = T.nnet.hard_sigmoid( W_x_i.dot(x_t) + W_h_i.dot(h_t_prev) )
-            o = T.nnet.hard_sigmoid( W_x_o.dot(x_t) + W_h_o.dot(h_t_prev) )
-            f = T.nnet.hard_sigmoid( W_x_f.dot(x_t) + W_h_f.dot(h_t_prev) )
-            g = T.tanh( W_x_g.dot(x_t) + W_h_g.dot(h_t_prev) )
+            #s_t = T.tanh(U[:,x_t] + W.dot(s_t_prev))
+            #o_t = T.nnet.softmax(V.dot(s_t))
+
+            i = T.nnet.hard_sigmoid(W_x_i.dot(x_t) + W_h_i.dot(h_t_prev))
+            o = T.nnet.hard_sigmoid(W_x_o.dot(x_t) + W_h_o.dot(h_t_prev))
+            f = T.nnet.hard_sigmoid(W_x_f.dot(x_t) + W_h_f.dot(h_t_prev))
+            g = T.tanh(W_x_g.dot(x_t) + W_h_g.dot(h_t_prev))
+
+            # i = T.nnet.hard_sigmoid(W_x_i[:,x_t] + W_h_i.dot(h_t_prev))
+            # o = T.nnet.hard_sigmoid(W_x_o[:,x_t] + W_h_o.dot(h_t_prev))
+            # f = T.nnet.hard_sigmoid(W_x_f[:,x_t] + W_h_f.dot(h_t_prev))
+            # g = T.tanh(W_x_g[:,x_t] + W_h_g.dot(h_t_prev))
 
             c_t = f*c_t_prev + i*g
             h_t = o*T.tanh(c_t)
 
-            o_t = T.transpose( T.nnet.softmax( T.transpose(W_hy.dot(h_t)) ) )
+            o_t = T.nnet.softmax(W_hy.dot(h_t))
+
             return [o_t, h_t, c_t]
 
 
-        h_init = dict(initial=T.unbroadcast(T.zeros((self.hidden_dim, self.minibatch_size)), 1))
-        c_init = dict(initial=T.unbroadcast(T.zeros((self.hidden_dim, self.minibatch_size)), 1))
 
         [o,h,c], updates = theano.scan(
             forward_prop_step,
             sequences=x,
-            outputs_info=[None, h_init, c_init],
+            outputs_info=[None, dict(initial=T.zeros(self.hidden_dim)), dict(initial=T.zeros(self.hidden_dim))],
             truncate_gradient=self.bptt_truncate)
+            #non_sequences=[W_x_i, W_h_i, W_x_o, W_h_o, W_x_f, W_h_f, W_x_g, W_h_g, W_hy],
+            #strict=True)
         
-        prediction = T.argmax(o[-1], axis=1)
+        prediction = T.argmax(o, axis=1)
         o_error = T.sum(T.nnet.categorical_crossentropy(o, y))
         
         # Gradients
@@ -85,7 +93,7 @@ class LSTMTheano:
         dW_x_g = T.grad(o_error, W_x_g)
         dW_h_g = T.grad(o_error, W_h_g)
         dW_hy = T.grad(o_error, W_hy)
-
+        
         # Assign functions
         self.forward_propagation = theano.function([x], o)
         self.predict = theano.function([x], prediction)

@@ -1,25 +1,31 @@
 #! /usr/bin/env python
-import sys, csv, itertools, operator, os, time
+import sys
+import csv
+import itertools
+import operator
 import numpy as np
+import nltk
+import os
+import time
 from datetime import datetime
-from utils import *
-from lstm_theano import LSTMTheano
-from generate_from_lstm import generate_sentence
+from utils_lstm_with_stack import *
+from lstm_with_stack import LSTM_with_stack
+from generate_from_lstm_with_stack import generate_sentence
 
 #_VOCABULARY_SIZE = int(os.environ.get('VOCABULARY_SIZE', '8000'))
 _HIDDEN_DIM = int(os.environ.get('HIDDEN_DIM', '500'))
-_LEARNING_RATE = float(os.environ.get('LEARNING_RATE', '0.001'))
-_NEPOCH = int(os.environ.get('NEPOCH', '1000'))
+_LEARNING_RATE = float(os.environ.get('LEARNING_RATE', '0.01'))
+_NEPOCH = int(os.environ.get('NEPOCH', '100'))
 
 _MODEL_FILE = os.environ.get('MODEL_FILE', )
-#_MODEL_FILE = os.environ.get('MODEL_FILE', 'saved_model_parameters/lstm-theano-500-82-2016-02-14-18-06-09.npz')
+#_MODEL_FILE = os.environ.get('MODEL_FILE', 'saved_model_parameters/lstm-theano-500-82-2016-02-14-13-23-41.npz')
 
 def one_hot(x, dimensions):
     tmp = np.zeros(dimensions)
     tmp[x] = 1
     return tmp
 
-def train_with_sgd(model, X_train, y_train, learning_rate=0.001, nepoch=1, evaluate_loss_after=10, num_sentences=5):
+def train_with_sgd(model, X_train, y_train, learning_rate=0.001, nepoch=1, evaluate_loss_after=1, num_sentences=5):
     # We keep track of the losses so we can plot them later
     losses = []
     num_examples_seen = 0
@@ -35,7 +41,7 @@ def train_with_sgd(model, X_train, y_train, learning_rate=0.001, nepoch=1, evalu
             #     learning_rate = learning_rate * 0.5  
             #     print "Setting learning rate to %f" % learning_rate
             # ADDED! Saving model oarameters
-            save_model_parameters_lstm("saved_model_parameters/lstm-theano-%d-%d-%s.npz" % (model.hidden_dim, model.word_dim, time), model)
+            save_model_parameters_lstm("saved_model_parameters/lstm-_with_stack-theano-%d-%d-%s.npz" % (model.hidden_dim, model.word_dim, time), model)
             # for i in range(num_sentences):
             #     sent = []
             #     sent = generate_sentence(model, char_to_code_dict, code_to_char_dict, line_start_token, line_end_token, ALPHABET_LENGTH+1, sample_limit=50)
@@ -94,7 +100,7 @@ print "Wrote character-to-code dicts to {0}".format(dictFile)
 c_list = c_list[:100000]
 c_list.append(line_end_token)
 # Create the training data
-minibatch_size = 10
+minibatch_size = 1
 sequence_length = 50
 minibatches = []
 sentences = []
@@ -121,7 +127,11 @@ print "Changed dtype of training set."
 
 print "Dims of one minibatch: {0}".format(X_train[0].shape)
 
-model = LSTMTheano(ALPHABET_LENGTH+1, hidden_dim=_HIDDEN_DIM, minibatch_size=minibatch_size, bptt_truncate=sequence_length)
+push_vec = one_hot(char_to_code_dict['<'], ALPHABET_LENGTH+1)
+pop_vec = one_hot(char_to_code_dict['>'], ALPHABET_LENGTH+1)
+
+model = LSTM_with_stack(ALPHABET_LENGTH+1, hidden_dim=_HIDDEN_DIM, minibatch_size=minibatch_size, bptt_truncate=sequence_length, push_vec=push_vec, pop_vec=pop_vec)
+#model = lstm_theano.LSTMTheano(ALPHABET_LENGTH+1, hidden_dim=_HIDDEN_DIM)
 # t1 = time.time()
 # model.sgd_step(X_train[0], y_train[0], _LEARNING_RATE)
 # t2 = time.time()
