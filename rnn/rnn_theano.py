@@ -25,12 +25,12 @@ class RNNTheano:
     
     def __theano_build__(self):
         U, V, W = self.U, self.V, self.W
-        x = T.ivector('x')
-        y = T.ivector('y')
+        x = T.matrix('x')
+        y = T.matrix('y')
         def forward_prop_step(x_t, s_t_prev, U, V, W):
-            s_t = T.tanh(U[:,x_t] + W.dot(s_t_prev))
-            o_t = T.nnet.softmax(V.dot(s_t))
-            return [o_t[0], s_t]
+            s_t = T.tanh(U.dot(x_t) + W.dot(s_t_prev))
+            o_t = V.dot(s_t)
+            return [o_t, s_t]
         [o,s], updates = theano.scan(
             forward_prop_step,
             sequences=x,
@@ -40,7 +40,8 @@ class RNNTheano:
             strict=True)
         
         prediction = T.argmax(o, axis=1)
-        o_error = T.sum(T.nnet.categorical_crossentropy(o, y))
+        o_error = T.sum((o-y)**2)
+        #o_error = T.sum(T.nnet.categorical_crossentropy(o,y))
         
         # Gradients
         dU = T.grad(o_error, U)
@@ -67,49 +68,3 @@ class RNNTheano:
         # Divide calculate_loss by the number of words
         num_words = np.sum([len(y) for y in Y])
         return self.calculate_total_loss(X,Y)/float(num_words)   
-
-
-def gradient_check_theano(model, x, y, h=0.001, error_threshold=0.01):
-    # Overwrite the bptt attribute. We need to backpropagate all the way to get the correct gradient
-    model.bptt_truncate = 1000
-    # Calculate the gradients using backprop
-    bptt_gradients = model.bptt(x, y)
-    # List of all parameters we want to chec.
-    model_parameters = ['U', 'V', 'W']
-    # Gradient check for each parameter
-    for pidx, pname in enumerate(model_parameters):
-        # Get the actual parameter value from the mode, e.g. model.W
-        parameter_T = operator.attrgetter(pname)(model)
-        parameter = parameter_T.get_value()
-        print "Performing gradient check for parameter %s with size %d." % (pname, np.prod(parameter.shape))
-        # Iterate over each element of the parameter matrix, e.g. (0,0), (0,1), ...
-        it = np.nditer(parameter, flags=['multi_index'], op_flags=['readwrite'])
-        while not it.finished:
-            ix = it.multi_index
-            # Save the original value so we can reset it later
-            original_value = parameter[ix]
-            # Estimate the gradient using (f(x+h) - f(x-h))/(2*h)
-            parameter[ix] = original_value + h
-            parameter_T.set_value(parameter)
-            gradplus = model.calculate_total_loss([x],[y])
-            parameter[ix] = original_value - h
-            parameter_T.set_value(parameter)
-            gradminus = model.calculate_total_loss([x],[y])
-            estimated_gradient = (gradplus - gradminus)/(2*h)
-            parameter[ix] = original_value
-            parameter_T.set_value(parameter)
-            # The gradient for this parameter calculated using backpropagation
-            backprop_gradient = bptt_gradients[pidx][ix]
-            # calculate The relative error: (|x - y|/(|x| + |y|))
-            relative_error = np.abs(backprop_gradient - estimated_gradient)/(np.abs(backprop_gradient) + np.abs(estimated_gradient))
-            # If the error is to large fail the gradient check
-            if relative_error > error_threshold:
-                print "Gradient Check ERROR: parameter=%s ix=%s" % (pname, ix)
-                print "+h Loss: %f" % gradplus
-                print "-h Loss: %f" % gradminus
-                print "Estimated_gradient: %f" % estimated_gradient
-                print "Backpropagation gradient: %f" % backprop_gradient
-                print "Relative Error: %f" % relative_error
-                return 
-            it.iternext()
-        print "Gradient check for parameter %s passed." % (pname)

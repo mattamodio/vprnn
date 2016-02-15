@@ -2,7 +2,10 @@
 __pycache__/
 *.py[cod]
 *.npz
+<<<<<<< HEAD
 
+=======
+>>>>>>> e68de4e0e9f1546c3950bb7573c0ea1a396e959b
 # C extensions
 *.so
 

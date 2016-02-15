@@ -9,8 +9,7 @@ import os
 import time
 from datetime import datetime
 from utils import *
-from stack_rnn_theano import StackRNNTheano
-
+from rnn_theano import RNNTheano
 
 #_VOCABULARY_SIZE = int(os.environ.get('VOCABULARY_SIZE', '8000'))
 _HIDDEN_DIM = int(os.environ.get('HIDDEN_DIM', '100'))
@@ -35,7 +34,7 @@ def train_with_sgd(model, X_train, y_train, learning_rate=0.005, nepoch=1, evalu
                 print "Setting learning rate to %f" % learning_rate
             sys.stdout.flush()
             # ADDED! Saving model oarameters
-            save_model_parameters_stackrnn("saved_model_parameters/stack-rnn-theano-%d-%d-%s.npz" % (model.hidden_dim, model.word_dim, time), model)
+            save_model_parameters_theano("saved_model_parameters/rnn-theano-%d-%d-%s.npz" % (model.hidden_dim, model.word_dim, time), model)
         # For each training example...
         for i in range(len(y_train)):
             # One SGD step
@@ -73,6 +72,7 @@ with open('../data/mlb.xml', 'rb') as f:
     # c_list.append(line_end_token)
     # sentences = [c_list]
 
+sentences = sentences[:10]
 print "Parsed %d lists of characters." % (len(sentences))
 print "Found {0} characters: {1}".format(ALPHABET_LENGTH, char_to_code_dict.keys())
 
@@ -83,13 +83,15 @@ with open(dictFile, 'w+') as f:
     f.write(str(code_to_char_dict))
 print "Wrote character-to-code dicts to {0}".format(dictFile)
 
+
+
 # Create the training data
 X_train = np.asarray([[char_to_code_dict[c] for c in sent[:-1]] for sent in sentences])#, dtype='int32')
 y_train = np.asarray([[char_to_code_dict[c] for c in sent[1:]] for sent in sentences])#, dtype='int32')
 
 print "Created training set."
 
-model = StackRNNTheano(ALPHABET_LENGTH+1, hidden_dim=_HIDDEN_DIM, char_to_code_dict=char_to_code_dict)
+model = RNNTheano(ALPHABET_LENGTH+1, hidden_dim=_HIDDEN_DIM)
 #model = lstm_theano.LSTMTheano(ALPHABET_LENGTH+1, hidden_dim=_HIDDEN_DIM)
 t1 = time.time()
 model.sgd_step(X_train[0], y_train[0], _LEARNING_RATE)

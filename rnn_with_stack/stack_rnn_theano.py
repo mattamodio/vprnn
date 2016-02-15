@@ -11,7 +11,7 @@ theano.exception_verbosity='high'
 
 class StackRNNTheano:
     
-    def __init__(self, word_dim, hidden_dim=100, bptt_truncate=4, stack_size=200, push_pop_mapping=None):
+    def __init__(self, word_dim, hidden_dim=100, bptt_truncate=4, stack_size=200, push_pop_mapping=None, char_to_code_dict=None):
         # Assign instance variables
         self.word_dim = word_dim
         self.hidden_dim = hidden_dim
@@ -23,6 +23,7 @@ class StackRNNTheano:
         self.stack_size = stack_size
         # The dimensions to make a row of the stack for pushing/popping
         #
+        self.char_to_code_dict = char_to_code_dict
 
         # Randomly initialize the network parameters
         W_hx = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, word_dim))
@@ -54,10 +55,10 @@ class StackRNNTheano:
 
         def stack_update(x, stack, i, h):
             #mappedX = self.push_pop_mapping[x]
-            mappedX = np.random.randint(low=-1,high=2)
             isPush, isPop = (0,0)
-            if mappedX>0: isPush=1
-            if mappedX<1: isPop=1
+            if T.eq(x, self.char_to_code_dict['SENTENCE_START']): isPush=1
+            if T.eq(x, self.char_to_code_dict['SENTENCE_END']): isPop=1
+
 
 
 

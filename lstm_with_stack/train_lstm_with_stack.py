@@ -97,7 +97,7 @@ with open(dictFile, 'w+') as f:
 print "Wrote character-to-code dicts to {0}".format(dictFile)
 
 
-c_list = c_list[:100000]
+c_list = c_list[:1000]
 c_list.append(line_end_token)
 # Create the training data
 minibatch_size = 1
