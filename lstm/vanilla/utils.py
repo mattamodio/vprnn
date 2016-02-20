@@ -2,25 +2,6 @@ import numpy as np
 import sys
 from lstm_theano import LSTMTheano
 
-def softmax(x):
-    xt = np.exp(x - np.max(x))
-    return xt / np.sum(xt)
-
-def save_model_parameters_theano(outfile, model):
-    U, V, W = model.U.get_value(), model.V.get_value(), model.W.get_value()
-    np.savez(outfile, U=U, V=V, W=W)
-    print "Saved model parameters to %s." % outfile
-   
-def load_model_parameters_theano(path, model):
-    npzfile = np.load(path)
-    U, V, W = npzfile["U"], npzfile["V"], npzfile["W"]
-    model.hidden_dim = U.shape[0]
-    model.word_dim = U.shape[1]
-    model.U.set_value(U)
-    model.V.set_value(V)
-    model.W.set_value(W)
-    print "Loaded model parameters from %s. hidden_dim=%d word_dim=%d" % (path, U.shape[0], U.shape[1])
-    
 
 
 def save_model_parameters_lstm(outfile, model):
@@ -36,7 +17,7 @@ def save_model_parameters_lstm(outfile, model):
         W_hy=model.W_hy.get_value())
     print "Saved model parameters to %s." % outfile
 
-def load_model_parameters_lstm(path, minibatch_size=1, push_vec=None, pop_vec=None):
+def load_model_parameters_lstm(path, minibatch_size=1):
     npzfile = np.load(path)
     W_x_i, W_h_i = npzfile["W_x_i"], npzfile["W_h_i"]
     W_x_o, W_h_o = npzfile["W_x_o"], npzfile["W_h_o"]
@@ -46,10 +27,8 @@ def load_model_parameters_lstm(path, minibatch_size=1, push_vec=None, pop_vec=No
     hidden_dim, word_dim = W_x_i.shape[0], W_x_i.shape[1]
     print "Building model model from %s with hidden_dim=%d word_dim=%d" % (path, hidden_dim, word_dim)
     sys.stdout.flush()
-    if push_vec != None:
-        model = LSTMTheano(word_dim, hidden_dim=hidden_dim, minibatch_size=minibatch_size, push_vec=push_vec, pop_vec=pop_vec)
-    else:
-        model = LSTMTheano(word_dim, hidden_dim=hidden_dim, minibatch_size=minibatch_size)
+
+    model = LSTMTheano(word_dim, hidden_dim=hidden_dim, minibatch_size=minibatch_size)
     model.W_x_i.set_value(W_x_i)
     model.W_h_i.set_value(W_h_i)
     model.W_x_o.set_value(W_x_o)
@@ -59,4 +38,5 @@ def load_model_parameters_lstm(path, minibatch_size=1, push_vec=None, pop_vec=No
     model.W_x_g.set_value(W_x_g)
     model.W_h_g.set_value(W_h_g)
     model.W_hy.set_value(W_hy)
+    
     return model

@@ -21,18 +21,25 @@ class LSTM_with_stack:
         self.hidden_dim = hidden_dim
         self.minibatch_size = minibatch_size
         self.bptt_truncate = bptt_truncate
+
+        if push_vec==None:
+            PUSH = np.zeros((word_dim, minibatch_size))
+            PUSH[1] = 1
+            self.PUSH = theano.shared(name='PUSH', value=PUSH.astype(theano.config.floatX))
+        else:
+            PUSH = push_vec.reshape((word_dim,1))
+            self.PUSH = theano.shared(name='PUSH', value=PUSH.astype(theano.config.floatX))
+
+        if pop_vec==None:
+            POP = np.zeros((word_dim, minibatch_size))
+            POP[0] = 1
+            self.POP = theano.shared(name='POP', value=POP.astype(theano.config.floatX))
+        else:
+            POP = pop_vec.reshape((word_dim, 1))
+            self.POP = theano.shared(name='POP', value=POP.astype(theano.config.floatX))
+
         
         # Randomly initialize the network parameters
-        # W_x_i = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (word_dim, hidden_dim))
-        # W_h_i = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
-        # W_x_o = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (word_dim, hidden_dim))
-        # W_h_o = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
-        # W_x_f = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (word_dim, hidden_dim))
-        # W_h_f = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
-        # W_x_g = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (word_dim, hidden_dim))
-        # W_h_g = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
-        # W_hy = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, word_dim))
-
         W_x_i = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, word_dim))
         W_h_i = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
         W_x_o = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, word_dim))
@@ -43,37 +50,11 @@ class LSTM_with_stack:
         W_h_g = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
         W_hy = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (word_dim, hidden_dim))
 
-
-
-        if push_vec==None:
-            PUSH = np.zeros((82, minibatch_size))
-            PUSH[1] = 1
-            self.PUSH = theano.shared(name='PUSH', value=PUSH.astype(theano.config.floatX))
-        else:
-            PUSH = push_vec.reshape((82,1))
-            self.PUSH = theano.shared(name='PUSH', value=PUSH.astype(theano.config.floatX))
-
-        if pop_vec==None:
-            POP = np.zeros((82, minibatch_size))
-            POP[0] = 1
-            self.POP = theano.shared(name='POP', value=POP.astype(theano.config.floatX))
-        else:
-            POP = pop_vec.reshape((82, 1))
-            self.POP = theano.shared(name='POP', value=POP.astype(theano.config.floatX))
-
-        
         W_h_push = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
         W_h_stack_pop = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
         W_h_prev_pop = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
-        self.W_h_push = theano.shared(name="W_h_push", value=W_h_push.astype(theano.config.floatX))
-        self.W_h_stack_pop = theano.shared(name="W_h_stack_pop", value=W_h_stack_pop.astype(theano.config.floatX))
-        self.W_h_prev_pop = theano.shared(name="W_h_prev_pop", value=W_h_prev_pop.astype(theano.config.floatX))
-
         stack = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, minibatch_size, 200))
-        self.stack = theano.shared(name='stack', value=stack.astype(theano.config.floatX))
         ptr_to_top = 0
-        self.ptr_to_top = theano.shared(name='ptr_to_top', value=ptr_to_top)
-
 
         # Theano: Created shared variables
         self.W_x_i = theano.shared(name='W_x_i', value=W_x_i.astype(theano.config.floatX))
@@ -84,7 +65,14 @@ class LSTM_with_stack:
         self.W_h_f = theano.shared(name='W_h_f', value=W_h_f.astype(theano.config.floatX))
         self.W_x_g = theano.shared(name='W_x_g', value=W_x_g.astype(theano.config.floatX))
         self.W_h_g = theano.shared(name='W_h_g', value=W_h_g.astype(theano.config.floatX))
-        self.W_hy = theano.shared(name='W_hy', value=W_hy.astype(theano.config.floatX))     
+        self.W_hy = theano.shared(name='W_hy', value=W_hy.astype(theano.config.floatX))
+
+        self.W_h_push = theano.shared(name="W_h_push", value=W_h_push.astype(theano.config.floatX))
+        self.W_h_stack_pop = theano.shared(name="W_h_stack_pop", value=W_h_stack_pop.astype(theano.config.floatX))
+        self.W_h_prev_pop = theano.shared(name="W_h_prev_pop", value=W_h_prev_pop.astype(theano.config.floatX))
+        self.stack = theano.shared(name='stack', value=stack.astype(theano.config.floatX))
+        self.ptr_to_top = theano.shared(name='ptr_to_top', value=ptr_to_top)
+
         # We store the Theano graph here
         self.theano = {}
         self.__theano_build__()
@@ -110,31 +98,11 @@ class LSTM_with_stack:
             h_t_prev.tag.test_value = np.random.uniform(0,1, (300,1)).astype('float64')
             c_t_prev.tag.test_value = np.random.uniform(0,1, (300,1)).astype('float64')
 
-            ##############################################
-            # if theano_print:
-            #     theano.printing.Print('x_t.shape')(x_t.shape)
-            #     theano.printing.Print('W_x_i.shape')(W_x_i.shape)
-            #     theano.printing.Print('W_h_pop.shape')(W_h_pop.shape)
-            #     theano.printing.Print('h_t')(h_t_prev.shape)
-            #     theano.printing.Print('W_h_push.dot(h_t_prev)')(W_h_push.dot(h_t_prev).shape)
-
-                
-            ##############################################
-
-            theano.printing.Print('x_t shape')(x_t.shape)
-            theano.printing.Print('PUSH shape')(self.PUSH.shape)
-
             argm_xt = T.argmax(x_t, axis=0)[0]
             argm_push = T.argmax(self.PUSH, axis=0)[0]
             argm_pop = T.argmax(self.POP, axis=0)[0]
             is_push = T.eq(argm_xt, argm_push)
             is_pop = T.eq(argm_xt, argm_pop)
-
-            theano.printing.Print('argm_xt')(argm_xt)
-            theano.printing.Print('is_push')(is_push)
-            theano.printing.Print('is_pop')(is_pop)
-            # theano.printing.Print('stack shape')(self.stack.shape)
-            # theano.printing.Print('ptr_to_top')(self.ptr_to_top)
 
             #candidate_to_push = W_h_push.dot(h_t_prev)
             candidate_to_push = h_t_prev
@@ -169,7 +137,6 @@ class LSTM_with_stack:
                                       )
                               )
 
-
             i = T.nnet.hard_sigmoid( W_x_i.dot(x_t) + W_h_i.dot(h_prime) )
             o = T.nnet.hard_sigmoid( W_x_o.dot(x_t) + W_h_o.dot(h_prime) )
             f = T.nnet.hard_sigmoid( W_x_f.dot(x_t) + W_h_f.dot(h_prime) )
@@ -180,14 +147,7 @@ class LSTM_with_stack:
 
             o_t = T.transpose( T.nnet.softmax( T.transpose(W_hy.dot(h_t)) ) )
 
-
             #theano.printing.debugprint(o_t)
-
-            ##############################################
-            if theano_print:
-                theano.printing.Print('o_t.shape')(o_t.shape)
-                theano.printing.Print('o_t')(o_t)
-            ##############################################
 
             return [o_t, h_t, c_t]
 
