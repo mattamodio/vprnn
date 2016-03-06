@@ -4,6 +4,7 @@ import theano
 from theano import tensor as T, function, printing
 from utils import *
 from NWLSTM_Layer import NWLSTM_Layer
+from theano.compile.nanguardmode import NanGuardMode
 
 class NWLSTM_Net:
     def __init__(self, word_dim, hidden_dim=100, minibatch_dim=1, bptt_truncate=4, num_layers=1,
@@ -73,10 +74,10 @@ class NWLSTM_Net:
         y = T.tensor3('y', dtype=theano.config.floatX)
         learning_rate = T.scalar('learning_rate', dtype=theano.config.floatX)
         
-        sequence_length = 10
+        sequence_length = 7
         x.tag.test_value = np.random.uniform(0, 1, size=(sequence_length,self.word_dim,self.minibatch_dim)).astype(theano.config.floatX)
         y.tag.test_value = np.random.uniform(0, 1, size=(sequence_length,self.word_dim,self.minibatch_dim)).astype(theano.config.floatX)
-        learning_rate.tag.test_value = .01
+        learning_rate.tag.test_value = .001
         #########################################################
         #########################################################
         # Scan functions
@@ -114,8 +115,8 @@ class NWLSTM_Net:
             for i,layer in enumerate(self.layers):
                 layer_input = layer.forward_prop(layer_input, is_push, is_pop)
                 layer_input = layer_input*masks[:,:,i] # dropout
-
-            o_t = T.transpose( T.nnet.softmax( T.transpose(self.W_hy.dot(layer_input/self.softmax_temperature)) ) )
+            
+            o_t = self.W_hy.dot(layer_input)
             
             return o_t
         #########################################################
@@ -134,9 +135,22 @@ class NWLSTM_Net:
         #########################################################
         #########################################################
         # Error calculation and model interface functions
-        o_error = T.sum(T.nnet.categorical_crossentropy(o, y))
-        
-        self.forward_propagation = theano.function([x], o)
+        # comput softmax in numerically stable, column-wise way
+        # move distribution axis to the end, collapse sequences/minibatches along first axis, calculate softmax
+        # for each of the sequence_length*num_minibatches rows, then re-roll and swap axes back
+        swapped_o = T.swapaxes(o,1,2)
+        swapped_flat_o = swapped_o.reshape((-1,swapped_o.shape[-1]))
+        swapped_flat_o = np.exp(swapped_flat_o/self.softmax_temperature)
+        swapped_flat_o = swapped_flat_o / swapped_flat_o.sum(axis=1, keepdims=True)
+        swapped_o = swapped_flat_o.reshape(swapped_o.shape)
+        softmaxed_o = T.swapaxes(swapped_o,1,2)
+
+        # clip softmaxed probabilites to avoid explosion/vanishing during crossentropy calculation
+        clipped_softmaxed_o = T.clip(softmaxed_o, 1e-6, 1 - 1e-6)
+        #o_error = T.sum(T.nnet.categorical_crossentropy(clipped_softmaxed_o[-1,:,:], y[-1]))
+        o_error = T.sum(T.nnet.categorical_crossentropy(clipped_softmaxed_o,y))
+
+        self.forward_propagation = theano.function([x], softmaxed_o)
         self.ce_error = theano.function([x, y], o_error)
         ###########################################################################
         ###########################################################################
@@ -149,7 +163,7 @@ class NWLSTM_Net:
                 updates.append(update)
             return updates
 
-        def RMSprop(cost, params, learning_rate=0.001, b1=0.9, b2=0.999, epsilon=1e-6):
+        def RMSprop(cost, params, learning_rate=0.01, b1=0.9, b2=0.999, epsilon=1e-6):
             grads = T.grad(cost=cost, wrt=params, consider_constant=[masks])
             updates = []
             for p, g in zip(params, grads):
@@ -159,15 +173,15 @@ class NWLSTM_Net:
                 m = b1*m_old + (1-b1)*g
                 v = b2*v_old + (1-b2)*(g**2)
 
-                update = p - (learning_rate*m) / (T.sqrt(T.sqrt(v)) + epsilon)
-
+                update = (learning_rate*m) / (T.sqrt(v) + epsilon)
+                
                 # For bias parameters, set update to be broadcastable along minibatch dimension
                 if p.broadcastable[1]:
                     update = T.addbroadcast(update, 1)
 
                 updates.append((m_old, m))
                 updates.append((v_old, v))
-                updates.append((p, update))
+                updates.append((p, p-update))
 
             return updates
 
@@ -176,15 +190,10 @@ class NWLSTM_Net:
 
         self.train_model = theano.function(inputs=[x,y,learning_rate],
                                       outputs=[],
-                                      updates=updates)
+                                      updates=updates)#, mode=NanGuardMode(nan_is_error=True,inf_is_error=True,big_is_error=True))
+                                      
         ###########################################################################
         ###########################################################################
 
-    def calculate_total_loss(self, X, Y):
-
-        return np.sum([self.ce_error(x,y) for x,y in zip(X,Y)])
-    
-    def calculate_loss(self, X, Y):
-        # Divide calculate_loss by the number of words
-        num_words = np.sum([len(y) for y in Y])
-        return self.calculate_total_loss(X,Y)/float(num_words)
+    def loss_for_minibatch(self, X, Y):
+        return self.ce_error(X,Y)/1.

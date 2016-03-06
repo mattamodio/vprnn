@@ -46,7 +46,7 @@ def load_model_parameters_lstm(path, sample=1, softmax_temperature=1):
         param.set_value(value)
         
 
-    print "Finished building model!"
+    print "Finished building model!\n"
     sys.stdout.flush()
 
     return model
