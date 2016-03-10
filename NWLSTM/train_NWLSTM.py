@@ -8,38 +8,41 @@ from utils import *
 from NWLSTM_Net import NWLSTM_Net
 
 # Data parameters
-MAX_MINIBATCHES = 10
-MINIBATCH_SIZE = 100
+MAX_MINIBATCHES = False
+MINIBATCH_SIZE = 128
 SEQUENCE_LENGTH = 100
-BPTT_TRUNCATE = -1
+BPTT_TRUNCATE = 25
 
 # Stack parameters
 WANT_STACK = False
 STACK_HEIGHT = 15
-PUSH_CHAR = u'\t'
-POP_CHAR = u'\n'
+PUSH_CHAR = 'a'#u'\t'
+POP_CHAR = 'a'#u'\n'
+CONTEXT_TO_PUSH = 5
+NULL = 'NULL_TOKEN'
 
 # Layer parameters
-HIDDEN_DIM = 512
+HIDDEN_DIM = 256
 NUM_LAYERS = 2
-ACTIVATION = 'tanh' # tanh or relu
+ACTIVATION = 'tanh'
 
 # Optimization parameters
 OPTIMIZATION = 'RMSprop' # RMSprop or SGD
-LEARNING_RATE = .01
-DROPOUT = .25
+LEARNING_RATE = .001
+DROPOUT = .5
 NEPOCH = 1000
 EVAL_LOSS_AFTER = 1
 
 # Data source parameters
 DATAFILE = '../data/war_and_peace.txt'
+#DATAFILE = '../data/tmp.txt'
 MODEL_FILE = None
 
 
 # theano.config.optimizer = 'None'
 # theano.config.compute_test_value = 'raise'
 # theano.config.exception_verbosity = 'high'
-# # #theano.config.profile = True
+
 theano.config.warn_float64 = 'warn'
 theano.config.floatX = 'float32'
 
@@ -50,43 +53,19 @@ print "Training NWLSTM with parameters:\
     \nStack: {8}\
     \nLearning Rate: {3}\
     \nDropout: {9}\
+    \nOptimization: {11}\
+    \nActivation: {12}\
     \nMinibatch size: {4}\
     \nSequence Length: {5}\
     \nTruncate gradient: {10}\
     \nNumber of epochs: {6}\
     \nLoading from model: {7}\n".format(MAX_MINIBATCHES, HIDDEN_DIM, NUM_LAYERS, LEARNING_RATE, MINIBATCH_SIZE,
-        SEQUENCE_LENGTH, NEPOCH, MODEL_FILE, WANT_STACK, DROPOUT, BPTT_TRUNCATE)
+        SEQUENCE_LENGTH, NEPOCH, MODEL_FILE, WANT_STACK, DROPOUT, BPTT_TRUNCATE, OPTIMIZATION, ACTIVATION)
 
 def one_hot(x, dimensions):
     tmp = np.zeros(dimensions)
     tmp[x] = 1
     return tmp.astype('float32')
-
-# def train_with_sgd(model, X_train, y_train, learning_rate=0.001, nepoch=1, evaluate_loss_after=1000):
-    # # We keep track of the losses so we can plot them later
-    # losses = []
-    # examples_per_epoch = (CHAR_LIMIT - SEQUENCE_LENGTH) / MINIBATCH_SIZE
-    # percent_progress_points = set([int((i/10.) * examples_per_epoch) for i in range(1,10)])
-    # print "Will print progress at steps: {0}".format(sorted(list(percent_progress_points)))
-
-    # for epoch in range(nepoch):
-    #     num_examples_seen = 0
-    #     percent_progress = 1
-        
-    #     if (epoch % evaluate_loss_after == 0): # Optionally evaluate the loss
-    #         loss = model.calculate_loss(X_train, y_train)
-    #         losses.append((num_examples_seen, loss))
-    #         time = datetime.datetime.now().strftime("%m-%d___%H-%M-%S")
-    #         print "{0}: Loss after epoch={1}: {2}".format(time, epoch, loss)
-    #         save_model_parameters_lstm("saved_model_parameters/NWLSTM_savedparameters_{0:.1f}__{1}.npz".format(loss, time), model)
-
-    #     for i in xrange(len(y_train)): # One SGD step
-    #         model.train_model(X_train[i], y_train[i], learning_rate)
-    #         num_examples_seen += 1
-    #         # if num_examples_seen in percent_progress_points:
-    #         #     print "{0}% finished".format(str(percent_progress)+"0")
-    #         #     percent_progress+=1
-    #         #     sys.stdout.flush()
 
 
 def parseFileForCharacterDicts(filename):
@@ -102,6 +81,10 @@ def parseFileForCharacterDicts(filename):
                     code_to_char_dict[ALPHABET_LENGTH] = c
                     ALPHABET_LENGTH+=1
             if not chunk: break
+
+    if WANT_STACK:
+        char_to_code_dict[NULL] = ALPHABET_LENGTH
+        code_to_char_dict[ALPHABET_LENGTH] = NULL
 
     #ALPHABET_LENGTH+=1 #dicts are zero-indexed, but we want to create vectors of size one greater
 
@@ -125,71 +108,98 @@ def readFile(filename, dictsFile=None, outputDictsToFile=None):
                 current_sequence = current_sequence[1:]
                 
                 if len(current_minibatch)>=MINIBATCH_SIZE: #next sequence starts a new minibatch
-                    #print [[str(c) for c in seq] for seq in current_minibatch]
+                    yield current_minibatch
+                   
+                    minibatches_yielded+=1
+                    if MAX_MINIBATCHES and minibatches_yielded>=MAX_MINIBATCHES: break
+                    
+                    current_minibatch = []
+                    #if minibatches_yielded%2000==0: print minibatches_yielded
+                    continue
+
+
+
+
+                
+def nullOutMinibatch(minibatch, desired_length, desired_size):
+    while len(minibatch)<desired_size:
+        null_sequence = [NULL]*desired_length
+        minibatch.append(null_sequence)
+    return minibatch
+
+def readFileWithUnmatchedLefts(filename, dictsFile=None, outputDictsToFile=None):
+    with open(filename, 'rb') as f:
+        
+        
+        minibatches_yielded = 0
+        current_minibatch = []
+        current_sequence = [NULL]*(SEQUENCE_LENGTH-1)
+
+        unmatched_pushes = []
+        popped_buffers = []
+        while True:
+            c = f.read(1)
+            if not c: break
+
+            if c==PUSH_CHAR:
+                current_sequence.append(c)
+                push_buffer = current_sequence[-CONTEXT_TO_PUSH:]
+                push_buffer.append(NULL)
+                push_buffer = [char if char!=POP_CHAR else NULL for char in push_buffer]
+                push_buffer = [SEQUENCE_LENGTH+1,push_buffer]
+                unmatched_pushes.append( push_buffer )
+                #print "\nPUSH BUFFER: {0}\n".format(push_buffer)
+            elif c==POP_CHAR:
+                pop_buffer = unmatched_pushes.pop()
+                pop_buffer[0] = SEQUENCE_LENGTH+1
+                popped_buffers.append(pop_buffer)
+                #print "\nPOP BUFFER: {0}\n".format(pop_buffer)
+                current_sequence.append(c)
+            else:
+                current_sequence.append(c)
+
+            unmatched_pushes = [[max(0,counter-1), pushed] for counter,pushed in unmatched_pushes]
+            popped_buffers = [[max(0,counter-1), pushed] for counter,pushed in popped_buffers]
+            popped_buffers = filter(lambda x: x[0]!=0, popped_buffers)
+
+            if len(current_sequence)>=SEQUENCE_LENGTH:
+                prepended_mb = []
+                    # for stack_item in unmatched_pushes:
+                    #     if stack_item[0]==0:
+                    #         prepended_mb.extend(stack_item[1])
+                for stack_item in popped_buffers:
+                    if stack_item[0]!=0:
+                        prepended_mb.extend(stack_item[1])
+                prepended_mb.extend(current_sequence)
+                #print "".join(prepended_mb).replace("\t","<").replace("\r"," ").replace("\n",">")
+                
+                # if minibatch up to this point has a different dimension, null out and then yield it,
+                # and start a new one for this sequence
+                if len(current_minibatch)>0 and not len(current_minibatch[0])==len(prepended_mb):
+                    current_minibatch = nullOutMinibatch(current_minibatch, len(current_minibatch[0]), MINIBATCH_SIZE)
+                    #print ["".join(p).replace("\t","<").replace("\r"," ").replace("\n",">") for p in current_minibatch], [len(p) for p in current_minibatch]# yield it
+                    yield current_minibatch
+                    current_minibatch = []
+
+                current_minibatch.append(prepended_mb)
+                #current_minibatch.append(current_sequence) #add this sequence to current minibatch
+                current_sequence = current_sequence[1:]
+                
+                if len(current_minibatch)>=MINIBATCH_SIZE: #next sequence starts a new minibatch
+                    #print ["".join(p).replace("\t","<").replace("\r"," ").replace("\n",">") for p in current_minibatch], [len(p) for p in current_minibatch]
                     yield current_minibatch
                    
                     minibatches_yielded+=1
                     if minibatches_yielded>=MAX_MINIBATCHES: break
                     
                     current_minibatch = []
-                    if minibatches_yielded%100==0: print minibatches_yielded
                     continue
 
-
-                
-
-def readFileWithUnmatchedLefts(filename, dictsFile=None, outputDictsToFile=None):
-    with open(filename, 'rb') as f:
-        
-        minibatches_yielded = 0
-        current_minibatch = []
-        current_sequence = []
-
-        unmatched_pushes = []
-        pop_buffer = []
-        while True:
-            c = f.read(1)
-            if not c: break
-
-            if c==PUSH_CHAR:
-                push_buffer = current_sequence
-                push_buffer.append('NULL')
-                unmatched_pushes.append(push_buffer)
-                print "PUSH BUFFER: {0}".format(push_buffer)
-            elif c==POP_CHAR:
-                pop_buffer = unmatched_pushes.pop()
-                print "POP BUFFER: {0}".format(pop_buffer)
-            else:
-                print c
-            current_sequence.append(c)
-
-            if len(current_sequence)>=SEQUENCE_LENGTH:
-
-
-                current_sequence_with_prepended_buffer = pop_buffer[:]
-                current_sequence_with_prepended_buffer.extend(current_sequence)
-                current_minibatch.append(current_sequence_with_prepended_buffer)
-
-
-
-                #current_minibatch.append(current_sequence) #add this sequence to current minibatch
-                current_sequence = current_sequence[1:]
-                
-                if len(current_minibatch)>=MINIBATCH_SIZE: #next sequence starts a new minibatch
-                    #print [[str(c) for c in seq] for seq in current_minibatch]
-
-
-                    #yield current_minibatch
-                    print current_minibatch
-                   
-                    minibatches_yielded+=1
-                    if minibatches_yielded>=MAX_MINIBATCHES: break
-                    
-                    current_minibatch = []
-                    continue
-
-        return None,None,None
-
+def readFileGenerator(datafile, want_stack):
+    if not want_stack:
+        return readFile(datafile)
+    else:
+        return readFileWithUnmatchedLefts(datafile)
 
 def main():
     print "Parsing for set of characters: {0}".format(DATAFILE)
@@ -197,9 +207,11 @@ def main():
     print "Found {0} characters: {1}\n".format(len(char_to_code_dict), char_to_code_dict.keys())
 
 
-    #char_to_code_dict, code_to_char_dict, ALPHABET_LENGTH = readFileWithUnmatchedLefts(DATAFILE)
-    #sys.exit()
-
+    # for minibatch in readFileWithUnmatchedLefts(DATAFILE):
+    #     for seq in minibatch:
+    #         print len(seq), seq
+    #     print 
+    # sys.exit()
 
     print "Compiling model..."
     if MODEL_FILE != None:
@@ -218,32 +230,37 @@ def main():
 
 
     losses=[]
+    counter = 0
     for epoch in xrange(NEPOCH):
         #print "Epoch: {0}".format(epoch)
-        first = True
-        for minibatch in readFile(DATAFILE):
+        for minibatch in readFileGenerator(DATAFILE, WANT_STACK):
             #print "Current minibatch: {0}".format([[str(c) for c in seq] for seq in minibatch])
 
             x = np.dstack([np.asarray([one_hot(char_to_code_dict[c], ALPHABET_LENGTH) for c in seq[:-1]]) for seq in minibatch])
             y = np.dstack([np.asarray([one_hot(char_to_code_dict[c], ALPHABET_LENGTH) for c in seq[1:]]) for seq in minibatch])
 
 
-            if first and epoch%EVAL_LOSS_AFTER==0:
+            if counter%EVAL_LOSS_AFTER==0:
+                # print minibatch
+                # grads = model.get_grads(x,y)
+                # print len(grads)
                 if epoch==0: print "Dims of one minibatch: {0}".format(x.shape)
                 t1 = time.time()
                 model.train_model(x, y, LEARNING_RATE)
                 t2 = time.time()
-                if epoch==0: print "One SGD step took: {0:.2f} milliseconds\n".format((t2 - t1) * 1000.)
+                if counter%(EVAL_LOSS_AFTER*10)==0: print "One SGD step took: {0:.2f} milliseconds".format((t2 - t1) * 1000.)
 
 
                 loss = model.loss_for_minibatch(x,y)
                 losses.append((epoch, loss))
                 dt = datetime.datetime.now().strftime("%m-%d___%H-%M-%S")
                 print "{0}: Loss on first minibatch after epoch={1}: {2:.1f}".format(dt, epoch, loss)
+                
                 save_model_parameters_lstm("saved_model_parameters/NWLSTM_savedparameters_{0:.1f}__{1}.npz".format(loss, dt), model)
-                first = False
             else:
                 model.train_model(x, y, LEARNING_RATE)
+
+            counter+=1
 
 
     print "{0}: Loss after all epochs: {1:.1f}".format(dt, loss)

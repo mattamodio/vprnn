@@ -25,18 +25,18 @@ class NWLSTM_Layer(object):
         #########################################################
         # Create weight/bias matrices and their symbolic shared variables
         word_dim, hidden_dim, minibatch_dim = self.word_dim, self.hidden_dim, self.minibatch_dim
-        W_x_i = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, word_dim))
-        W_h_i = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
-        W_x_o = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, word_dim))
-        W_h_o = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
-        W_x_f = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, word_dim))
-        W_h_f = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
-        W_x_g = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, word_dim))
-        W_h_g = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
-        B_i = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, 1))
-        B_f = np.random.uniform(1-np.sqrt(1./word_dim), 1, (hidden_dim, 1)) #initialize forget gate close to one, encouraging early memory
-        B_o = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, 1))
-        B_g = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, 1))
+        W_x_i = np.random.uniform(-.01, .01, (hidden_dim, word_dim))
+        W_h_i = np.random.uniform(-.01, .01, (hidden_dim, hidden_dim))
+        W_x_o = np.random.uniform(-.01, .01, (hidden_dim, word_dim))
+        W_h_o = np.random.uniform(-.01, .01, (hidden_dim, hidden_dim))
+        W_x_f = np.random.uniform(-.01, .01, (hidden_dim, word_dim))
+        W_h_f = np.random.uniform(-.01, .01, (hidden_dim, hidden_dim))
+        W_x_g = np.random.uniform(-.01, .01, (hidden_dim, word_dim))
+        W_h_g = np.random.uniform(-.01, .01, (hidden_dim, hidden_dim))
+        B_i = np.random.uniform(-.01, .01, (hidden_dim, 1))
+        B_f = np.random.uniform(.99, 1., (hidden_dim, 1)) #initialize forget gate close to one, encouraging early memory
+        B_o = np.random.uniform(-.01, .01, (hidden_dim, 1))
+        B_g = np.random.uniform(-.01, .01, (hidden_dim, 1))
 
         self.W_x_i = theano.shared(name='W_x_i'+str(self.layer_num), value=W_x_i.astype(theano.config.floatX))
         self.W_h_i = theano.shared(name='W_h_i'+str(self.layer_num), value=W_h_i.astype(theano.config.floatX))
@@ -55,8 +55,8 @@ class NWLSTM_Layer(object):
         # For stack, also create these symbolic variables
         if self.want_stack:
 
-            W_h_stack_pop = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
-            W_h_prev_pop = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
+            W_h_stack_pop = np.random.uniform(-.01, .01, (hidden_dim, hidden_dim))
+            W_h_prev_pop = np.random.uniform(-.01, .01, (hidden_dim, hidden_dim))
             # initialize 3d-stack and set ptrs to top to be first row
             stack = np.zeros((minibatch_dim, self.stack_height, hidden_dim))
             ptrs_to_top = np.zeros((minibatch_dim, self.stack_height, hidden_dim))
@@ -103,16 +103,46 @@ class NWLSTM_Layer(object):
         # Internal LSTM calculations
         i = T.nnet.hard_sigmoid( self.W_x_i.dot(x) + self.W_h_i.dot(h_prime) + self.B_i )
         o = T.nnet.hard_sigmoid( self.W_x_o.dot(x) + self.W_h_o.dot(h_prime) + self.B_o )
-        f = T.nnet.hard_sigmoid( self.W_x_f.dot(x) + self.W_h_f.dot(h_prime) + self.B_f )
+        #f = T.nnet.sigmoid( self.W_x_f.dot(x) + self.W_h_f.dot(h_prime) + self.B_f )
         g = self.activation( self.W_x_g.dot(x) + self.W_h_g.dot(h_prime) + self.B_g )
 
-        c_t = f*self.c + i*g
+        #c_t = f*self.c + i*g
+        c_t = self.c + i*g
         h_t = o*self.activation(c_t)
 
         self.c = c_t
         self.h = h_t
 
         return h_t
+        #########################################################
+        #########################################################
+    
+    def forward_prop2(self, x, h_prev, c_prev, is_push, is_pop):
+        #########################################################
+        #########################################################
+        # Perform push/pops as necessary, updating stack and stack pointers
+        if self.want_stack:
+            postpush_stack_values, postpush_stack_ptrs = update_stack_for_push(self.stack, self.ptrs_to_top, is_push, self.h)
+            postpop_stack_values, postpop_stack_ptrs, h_popped = update_stack_for_pop(postpush_stack_values, postpush_stack_ptrs, is_pop)
+
+            self.stack = postpop_stack_values
+            self.ptrs_to_top = postpop_stack_ptrs
+            h_prime = self.W_h_prev_pop.dot(self.h) + self.W_h_stack_pop.dot(h_popped)
+        else:
+            h_prime = h_prev
+        #########################################################
+        #########################################################
+        # Internal LSTM calculations
+        i = T.nnet.hard_sigmoid( self.W_x_i.dot(x) + self.W_h_i.dot(h_prime) + self.B_i )
+        o = T.nnet.hard_sigmoid( self.W_x_o.dot(x) + self.W_h_o.dot(h_prime) + self.B_o )
+        f = T.nnet.sigmoid( self.W_x_f.dot(x) + self.W_h_f.dot(h_prime) + self.B_f )
+        g = self.activation( self.W_x_g.dot(x) + self.W_h_g.dot(h_prime) + self.B_g )
+
+        c_t = f*self.c + i*g
+        #c_t = c_prev + i*g
+        h_t = o*self.activation(c_t)
+
+        return h_t, c_t
         #########################################################
         #########################################################
 

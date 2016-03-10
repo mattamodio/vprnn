@@ -5,14 +5,13 @@ import numpy as np
 from datetime import datetime
 from utils import *
 
-DATAFILE = "saved_model_parameters/NWLSTM_savedparameters_22069.0__03-06___14-12-16.npz"
+DATAFILE = "saved_model_parameters/NWLSTM_savedparameters_2546.1__03-08___17-52-34.npz"
 SAMPLE_FROM_DISTRIBUTION = True
 SAMPLE_LIMIT = 300
-SOFTMAX_TEMPERATURES = np.linspace(.1, 1.1, 4)
+SOFTMAX_TEMPERATURES = [1]# np.linspace(.25, 1.25, 3)
 NUM_SENTENCES = 1
 
-STARTING_STRING = ''' CHAPTER I
-    "Well, '''
+STARTING_STRING = '''abcdefghijk1bcde2ghijkabcdefghijk1abcdefghijk1bcde2ghijkabcdefghijk1abcdefghijk1bcde2ghijkabcdefghijk1'''
 
 # import theano
 # theano.config.optimizer = 'None'
@@ -41,7 +40,9 @@ def generate_sentence(model, sample_limit=100, sample_from_distribution=True):
     while len(new_sentence)<sample_limit:
 
         next_char_probs = model.forward_propagation(new_sentence) # get probability of next character
-        next_char_probs = [_[0] for _ in next_char_probs[-1][:]]        
+        next_char_probs = [_[0] for _ in next_char_probs[-1][:]]
+        print next_char_probs
+        sys.exit()      
         
         if sample_from_distribution: # either sample from the distribution or take the most likely next character
             samples = np.random.multinomial(1, next_char_probs)
