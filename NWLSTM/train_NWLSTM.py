@@ -31,7 +31,7 @@ OPTIMIZATION = 'RMSprop' # RMSprop or SGD
 LEARNING_RATE = .001
 DROPOUT = .5
 NEPOCH = 1000
-EVAL_LOSS_AFTER = 1
+EVAL_LOSS_AFTER = 100
 
 # Data source parameters
 DATAFILE = '../data/war_and_peace.txt'
@@ -251,10 +251,10 @@ def main():
                 if counter%(EVAL_LOSS_AFTER*10)==0: print "One SGD step took: {0:.2f} milliseconds".format((t2 - t1) * 1000.)
 
 
-                loss = model.loss_for_minibatch(x,y)
+                loss, l1_loss, l2_loss = model.loss_for_minibatch(x,y)
                 losses.append((epoch, loss))
                 dt = datetime.datetime.now().strftime("%m-%d___%H-%M-%S")
-                print "{0}: Loss on first minibatch after epoch={1}: {2:.1f}".format(dt, epoch, loss)
+                print "{0}: Loss on first minibatch after epoch={1}: {2:.1f},{3:.1f},{4:.1f}".format(dt, epoch, loss, l1_loss, l2_loss)
                 
                 save_model_parameters_lstm("saved_model_parameters/NWLSTM_savedparameters_{0:.1f}__{1}.npz".format(loss, dt), model)
             else:

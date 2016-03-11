@@ -4,7 +4,7 @@ import theano
 from theano import tensor as T, function, printing, gradient
 from utils import *
 from NWLSTM_Layer import NWLSTM_Layer
-from theano.compile.nanguardmode import NanGuardMode
+#from theano.compile.nanguardmode import NanGuardMode
 
 class NWLSTM_Net:
     def __init__(self, word_dim, hidden_dim=100, minibatch_dim=1, bptt_truncate=4, num_layers=2,
@@ -122,48 +122,17 @@ class NWLSTM_Net:
 
             return is_push, is_pop
 
-        def forward_prop_step(x_t, masks, stepcounter):
-
-            # if it's the first element in the sequence, zero out the shared variables for hidden/cell states
-            
-            for i,layer in enumerate(self.layers):
-                self.layers[i].h = T.switch(T.eq(stepcounter,0),
-                    self.layers[i].h,
-                    T.cast(T.unbroadcast(T.zeros((self.layers[i].h.shape[0], self.layers[i].h.shape[1])), 1), theano.config.floatX))
-                self.layers[i].c = T.switch(T.eq(stepcounter,0),
-                    self.layers[i].c,
-                    T.cast(T.unbroadcast(T.zeros((self.layers[i].c.shape[0], self.layers[i].c.shape[1])), 1), theano.config.floatX))
-                # theano.printing.Print('self.layers[i].c')(self.layers[i].c)
-            # determine, for all layers, if this input was a push/pop
-            is_push, is_pop = map_push_pop(x_t, self.PUSH, self.POP)
-
-            layer_input = x_t
-            for i,layer in enumerate(self.layers):
-                layer_input = layer.forward_prop(layer_input, is_push, is_pop)
-                layer_input = layer_input*masks[:,:,i] # dropout
-            
-            o_t = self.W_hy.dot(layer_input)
-            
-            return o_t
-        
-        def forward_prop_step2(x_t, masks, h_prevs, c_prevs):
+        def forward_prop_step(x_t, masks, h_prevs, c_prevs):
 
             # determine, for all layers, if this input was a push/pop
             is_push, is_pop = map_push_pop(x_t, self.PUSH, self.POP)
 
-            # theano.printing.Print('h_prevs')(h_prevs)
-            # theano.printing.Print('h_prevs shape')(h_prevs.shape)
-            # theano.printing.Print('h_prevs[0]')(h_prevs[0])
-            # theano.printing.Print('h_prevs[0] shape')(h_prevs[0].shape)
 
             nonsymbolic_hs = []
             nonsymbolic_cs = []
 
-            h,c = self.layers[0].forward_prop2(x_t, h_prevs[0], c_prevs[0], is_push, is_pop)
+            h,c = self.layers[0].forward_prop(x_t, h_prevs[0], c_prevs[0], is_push, is_pop)
             h = h*masks[:,:,0] # dropout
-
-            # theano.printing.Print('h')(h)
-            # theano.printing.Print('h shape')(h.shape)
 
             nonsymbolic_hs.append(h)
             nonsymbolic_cs.append(c)
@@ -171,7 +140,6 @@ class NWLSTM_Net:
             for i,layer in enumerate(self.layers[1:]):
                 h,c = layer.forward_prop2(h, h_prevs[i], c_prevs[i], is_push, is_pop)
                 h = h*masks[:,:,i] # dropout
-                # theano.printing.Print('h')(h)
 
                 nonsymbolic_hs.append(h)
                 nonsymbolic_cs.append(c)
@@ -179,7 +147,6 @@ class NWLSTM_Net:
             h_s = T.stack(nonsymbolic_hs, axis=0)
             c_s = T.stack(nonsymbolic_cs, axis=0)
 
-            # theano.printing.Print('h_s shape')(h_s.shape)
 
             o_t = self.W_hy.dot(h)
             
@@ -195,16 +162,11 @@ class NWLSTM_Net:
             outputs_info=[None])
 
         (o,h,c), _ = theano.scan(
-            forward_prop_step2,
+            forward_prop_step,
             sequences=[x,masks],
             outputs_info=[None,h_inits,c_inits],
             truncate_gradient=self.bptt_truncate)
 
-        # o, _ = theano.scan(
-        #     forward_prop_step,
-        #     sequences=[x,masks,T.arange(x.shape[0])],
-        #     outputs_info=[None],
-        #     truncate_gradient=self.bptt_truncate)
         #########################################################
         #########################################################
         # Error calculation and model interface functions
@@ -225,18 +187,13 @@ class NWLSTM_Net:
         # clip softmaxed probabilites to avoid explosion/vanishing during crossentropy calculation
         clipped_softmaxed_o = T.clip(softmaxed_o, 1e-6, 1 - 1e-6)
         o_error = T.sum(T.nnet.categorical_crossentropy(clipped_softmaxed_o,y)) / T.cast(x.shape[0], 'float32')
-        #o_error = T.sum((o-y)**2)
+        #o_error = T.sum((clipped_softmaxed_o-y)**2)
 
-        
         L1 = T.sum([abs(p).sum() for p in self.params if 'B' not in p.name])
         L2 = T.sum([(p**2).sum() for p in self.params if 'B' not in p.name])
 
-        # theano.printing.Print('L1')(L1)
-        # theano.printing.Print('L2')(L2)
-        # theano.printing.Print('o_error')(o_error)
-
         regularized_error = o_error + l1_rate*L1 + l2_rate*L2
-        self.ce_error = theano.function([x, y], o_error)
+        self.ce_error = theano.function([x, y], [o_error, l1_rate*L1, l2_rate*L2])
         self.forward_propagation = theano.function([x], softmaxed_o)
         #grads = theano.grad(cost=o_error, wrt=self.params, consider_constant=[masks])
         #self.get_grads = theano.function([x,y], grads)
@@ -285,7 +242,8 @@ class NWLSTM_Net:
         ###########################################################################
 
     def loss_for_minibatch(self, X, Y):
-        return self.ce_error(X,Y)/1.
+        #return float(self.ce_error(X,Y))
+        return [float(_) for _ in self.ce_error(X,Y)]
 
 
 
