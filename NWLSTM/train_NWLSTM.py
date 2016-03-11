@@ -9,15 +9,15 @@ from NWLSTM_Net import NWLSTM_Net
 
 # Data parameters
 MAX_MINIBATCHES = False
-MINIBATCH_SIZE = 128
-SEQUENCE_LENGTH = 100
-BPTT_TRUNCATE = 25
+MINIBATCH_SIZE = 2#128
+SEQUENCE_LENGTH = 50#100
+BPTT_TRUNCATE = -1#25
 
 # Stack parameters
 WANT_STACK = False
 STACK_HEIGHT = 15
-PUSH_CHAR = 'a'#u'\t'
-POP_CHAR = 'a'#u'\n'
+PUSH_CHAR = 'b'#u'\t'
+POP_CHAR = 'c'#u'\n'
 CONTEXT_TO_PUSH = 5
 NULL = 'NULL_TOKEN'
 
@@ -31,11 +31,11 @@ OPTIMIZATION = 'RMSprop' # RMSprop or SGD
 LEARNING_RATE = .001
 DROPOUT = .5
 NEPOCH = 1000
-EVAL_LOSS_AFTER = 100
+EVAL_LOSS_AFTER = 1
 
 # Data source parameters
-DATAFILE = '../data/war_and_peace.txt'
-#DATAFILE = '../data/tmp.txt'
+#DATAFILE = '../data/war_and_peace.txt'
+DATAFILE = '../data/tmp.txt'
 MODEL_FILE = None
 
 
@@ -64,27 +64,35 @@ print "Training NWLSTM with parameters:\
 
 def one_hot(x, dimensions):
     tmp = np.zeros(dimensions)
+
     tmp[x] = 1
+
     return tmp.astype('float32')
 
+def nullOutMinibatch(minibatch, desired_length, desired_size):
+    while len(minibatch)<desired_size:
+        null_sequence = [NULL]*desired_length
+        minibatch.append(null_sequence)
+    return minibatch
 
 def parseFileForCharacterDicts(filename):
     with open(filename, 'rb') as f:
-        char_to_code_dict = {}
-        code_to_char_dict = {}
-        ALPHABET_LENGTH = 0
+        unique_chars = set()
         while True:
             chunk = f.read(256)
             for c in chunk:
-                if c not in char_to_code_dict:
-                    char_to_code_dict[c] = ALPHABET_LENGTH
-                    code_to_char_dict[ALPHABET_LENGTH] = c
-                    ALPHABET_LENGTH+=1
+                unique_chars.add(c)
             if not chunk: break
 
-    if WANT_STACK:
-        char_to_code_dict[NULL] = ALPHABET_LENGTH
-        code_to_char_dict[ALPHABET_LENGTH] = NULL
+    code_to_char_dict = dict([(i,c) for i,c in enumerate(sorted(unique_chars))])
+    char_to_code_dict = dict([(code_to_char_dict[k],k) for k in code_to_char_dict])
+
+    ALPHABET_LENGTH = len(code_to_char_dict.keys()) + 1
+
+    char_to_code_dict[NULL] = ALPHABET_LENGTH-1
+    code_to_char_dict[ALPHABET_LENGTH-1] = NULL
+
+    print char_to_code_dict
 
     #ALPHABET_LENGTH+=1 #dicts are zero-indexed, but we want to create vectors of size one greater
 
@@ -117,16 +125,6 @@ def readFile(filename, dictsFile=None, outputDictsToFile=None):
                     #if minibatches_yielded%2000==0: print minibatches_yielded
                     continue
 
-
-
-
-                
-def nullOutMinibatch(minibatch, desired_length, desired_size):
-    while len(minibatch)<desired_size:
-        null_sequence = [NULL]*desired_length
-        minibatch.append(null_sequence)
-    return minibatch
-
 def readFileWithUnmatchedLefts(filename, dictsFile=None, outputDictsToFile=None):
     with open(filename, 'rb') as f:
         
@@ -139,7 +137,8 @@ def readFileWithUnmatchedLefts(filename, dictsFile=None, outputDictsToFile=None)
         popped_buffers = []
         while True:
             c = f.read(1)
-            if not c: break
+            if not c:
+                break
 
             if c==PUSH_CHAR:
                 current_sequence.append(c)
@@ -161,6 +160,7 @@ def readFileWithUnmatchedLefts(filename, dictsFile=None, outputDictsToFile=None)
             unmatched_pushes = [[max(0,counter-1), pushed] for counter,pushed in unmatched_pushes]
             popped_buffers = [[max(0,counter-1), pushed] for counter,pushed in popped_buffers]
             popped_buffers = filter(lambda x: x[0]!=0, popped_buffers)
+
 
             if len(current_sequence)>=SEQUENCE_LENGTH:
                 prepended_mb = []
@@ -190,7 +190,8 @@ def readFileWithUnmatchedLefts(filename, dictsFile=None, outputDictsToFile=None)
                     yield current_minibatch
                    
                     minibatches_yielded+=1
-                    if minibatches_yielded>=MAX_MINIBATCHES: break
+                    if MAX_MINIBATCHES and minibatches_yielded>=MAX_MINIBATCHES:
+                        break
                     
                     current_minibatch = []
                     continue
@@ -204,7 +205,7 @@ def readFileGenerator(datafile, want_stack):
 def main():
     print "Parsing for set of characters: {0}".format(DATAFILE)
     char_to_code_dict, code_to_char_dict, ALPHABET_LENGTH = parseFileForCharacterDicts(DATAFILE)
-    print "Found {0} characters: {1}\n".format(len(char_to_code_dict), char_to_code_dict.keys())
+    print "Found {0} characters: {1}\n".format(ALPHABET_LENGTH, char_to_code_dict.keys())
 
 
     # for minibatch in readFileWithUnmatchedLefts(DATAFILE):
@@ -219,10 +220,11 @@ def main():
     else:
         push_vec = one_hot(char_to_code_dict[PUSH_CHAR], ALPHABET_LENGTH).reshape((ALPHABET_LENGTH,1))
         pop_vec = one_hot(char_to_code_dict[POP_CHAR], ALPHABET_LENGTH).reshape((ALPHABET_LENGTH,1))
+        null_vec = one_hot(char_to_code_dict[NULL], ALPHABET_LENGTH).reshape((ALPHABET_LENGTH,1))
         t1 = time.time()
         model = NWLSTM_Net(word_dim=ALPHABET_LENGTH, hidden_dim=HIDDEN_DIM, minibatch_dim=MINIBATCH_SIZE, bptt_truncate=BPTT_TRUNCATE,
                            num_layers=NUM_LAYERS, optimization=OPTIMIZATION, activation=ACTIVATION, want_stack=WANT_STACK,
-                           stack_height=STACK_HEIGHT, push_vec=push_vec, pop_vec=pop_vec, dropout=DROPOUT)
+                           stack_height=STACK_HEIGHT, push_vec=push_vec, pop_vec=pop_vec, null_vec=null_vec, dropout=DROPOUT)
         t2 = time.time()
         model.char_to_code_dict = char_to_code_dict
         model.code_to_char_dict = code_to_char_dict
@@ -242,15 +244,14 @@ def main():
 
             if counter%EVAL_LOSS_AFTER==0:
                 # print minibatch
-                # grads = model.get_grads(x,y)
-                # print len(grads)
                 if epoch==0: print "Dims of one minibatch: {0}".format(x.shape)
                 t1 = time.time()
                 model.train_model(x, y, LEARNING_RATE)
                 t2 = time.time()
                 if counter%(EVAL_LOSS_AFTER*10)==0: print "One SGD step took: {0:.2f} milliseconds".format((t2 - t1) * 1000.)
 
-
+                # probs = model.forward_propagation(x)
+                # print probs
                 loss, l1_loss, l2_loss = model.loss_for_minibatch(x,y)
                 losses.append((epoch, loss))
                 dt = datetime.datetime.now().strftime("%m-%d___%H-%M-%S")

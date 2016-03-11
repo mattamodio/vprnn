@@ -9,7 +9,7 @@ from NWLSTM_Layer import NWLSTM_Layer
 class NWLSTM_Net:
     def __init__(self, word_dim, hidden_dim=100, minibatch_dim=1, bptt_truncate=4, num_layers=2,
         optimization='RMSprop', activation='tanh', want_stack=False, stack_height=None, 
-        push_vec=None, pop_vec=None, softmax_temperature=1, dropout=0, l1_rate=.5, l2_rate=.5):
+        push_vec=None, pop_vec=None, softmax_temperature=1, null_vec=None, dropout=0, l1_rate=.01, l2_rate=.01):
         #########################################################
         #########################################################
         # Assign instance variables
@@ -39,18 +39,18 @@ class NWLSTM_Net:
         initial_layer = NWLSTM_Layer(layer_num=1, word_dim=word_dim,
             hidden_dim=hidden_dim, minibatch_dim=minibatch_dim, 
             activation=self.activation, want_stack=want_stack,
-            stack_height=stack_height, push_vec=push_vec, pop_vec=pop_vec)
+            stack_height=stack_height, push_vec=push_vec, pop_vec=pop_vec, null_vec=null_vec)
         self.layers.append(initial_layer)
         self.params.extend(initial_layer.params)
         for _ in xrange(1,num_layers):
             inner_layer = NWLSTM_Layer(layer_num=_+1, word_dim=hidden_dim, 
                 hidden_dim=hidden_dim, minibatch_dim=minibatch_dim, 
                 activation=self.activation, want_stack=want_stack,
-                stack_height=stack_height, push_vec=push_vec, pop_vec=pop_vec)
+                stack_height=stack_height, push_vec=push_vec, pop_vec=pop_vec, null_vec=null_vec)
             self.layers.append(inner_layer)
             self.params.extend(inner_layer.params)
         
-        W_hy = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (word_dim, hidden_dim))
+        W_hy = np.random.uniform(-.01, .01, (word_dim, hidden_dim))
         self.W_hy = theano.shared(name='W_hy', value=W_hy.astype(theano.config.floatX))
         self.params.append(self.W_hy)
         #########################################################
@@ -67,6 +67,8 @@ class NWLSTM_Net:
             self.PUSH = T.addbroadcast(theano.shared(name='PUSH', value=push_vec.astype(theano.config.floatX)), 1)
 
             self.POP = T.addbroadcast(theano.shared(name='POP', value=pop_vec.astype(theano.config.floatX)), 1)
+
+            self.NULL = T.addbroadcast(theano.shared(name='NULL', value=pop_vec.astype(theano.config.floatX)), 1)
         #########################################################
         #########################################################
         # Symbolic input/output variables and test values (for when theano.config.compute_test_value='raise')
@@ -120,32 +122,37 @@ class NWLSTM_Net:
             is_push = is_push.reshape((self.minibatch_dim,1,1))
             is_pop = is_pop.reshape((self.minibatch_dim,1,1))
 
-            return is_push, is_pop
+            argm_is_null = T.argmax(self.NULL, axis=0)
+            is_null = T.eq(argm_xt, argm_is_null)
+
+            return is_push, is_pop, is_null
 
         def forward_prop_step(x_t, masks, h_prevs, c_prevs):
 
             # determine, for all layers, if this input was a push/pop
-            is_push, is_pop = map_push_pop(x_t, self.PUSH, self.POP)
+            is_push, is_pop, is_null = map_push_pop(x_t, self.PUSH, self.POP)
+            #is_null = T.all(T.eq(x_t,T.zeros(x_t.shape)))
+            
 
 
             nonsymbolic_hs = []
             nonsymbolic_cs = []
 
-            h,c = self.layers[0].forward_prop(x_t, h_prevs[0], c_prevs[0], is_push, is_pop)
+            h,c = self.layers[0].forward_prop(x_t, h_prevs[0], c_prevs[0], is_push, is_pop, is_null)
             h = h*masks[:,:,0] # dropout
 
             nonsymbolic_hs.append(h)
             nonsymbolic_cs.append(c)
 
             for i,layer in enumerate(self.layers[1:]):
-                h,c = layer.forward_prop2(h, h_prevs[i], c_prevs[i], is_push, is_pop)
+                h,c = layer.forward_prop(h, h_prevs[i], c_prevs[i], is_push, is_pop, is_null)
                 h = h*masks[:,:,i] # dropout
 
                 nonsymbolic_hs.append(h)
                 nonsymbolic_cs.append(c)
             
-            h_s = T.stack(nonsymbolic_hs, axis=0)
-            c_s = T.stack(nonsymbolic_cs, axis=0)
+            h_s = T.stack(nonsymbolic_hs)
+            c_s = T.stack(nonsymbolic_cs)
 
 
             o_t = self.W_hy.dot(h)
@@ -181,12 +188,12 @@ class NWLSTM_Net:
         clipped_swapped_flat_o3 = clipped_swapped_flat_o2 / clipped_swapped_flat_o2.sum(axis=1, keepdims=True)
         softmaxed_swapped_o = clipped_swapped_flat_o3.reshape(swapped_o.shape)
         softmaxed_o = T.swapaxes(softmaxed_swapped_o,1,2)
-        # softmaxed_o = theano.printing.Print('softmaxed o')(softmaxed_o)
+        #softmaxed_o = theano.printing.Print('softmaxed o')(softmaxed_o)
         
 
         # clip softmaxed probabilites to avoid explosion/vanishing during crossentropy calculation
         clipped_softmaxed_o = T.clip(softmaxed_o, 1e-6, 1 - 1e-6)
-        o_error = T.sum(T.nnet.categorical_crossentropy(clipped_softmaxed_o,y)) / T.cast(x.shape[0], 'float32')
+        o_error = T.sum(T.nnet.categorical_crossentropy(clipped_softmaxed_o,y))# / T.cast(x.shape[0], 'float32')
         #o_error = T.sum((clipped_softmaxed_o-y)**2)
 
         L1 = T.sum([abs(p).sum() for p in self.params if 'B' not in p.name])

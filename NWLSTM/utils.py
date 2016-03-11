@@ -5,7 +5,7 @@ from NWLSTM_Net import NWLSTM_Net
 
 
 def save_model_parameters_lstm(outfile, model):
-    values = {str(p):p.get_value() for p in model.params}
+    values = dict([(str(p),p.get_value()) for p in model.params])
     values['hidden_dim'] = model.hidden_dim
     values['word_dim'] = model.word_dim
     values['num_layers'] = len(model.layers)

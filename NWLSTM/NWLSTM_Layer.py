@@ -8,7 +8,7 @@ from utils import *
 
 class NWLSTM_Layer(object):
     def __init__(self, layer_num, word_dim, hidden_dim, minibatch_dim, activation,
-        want_stack=False, stack_height=None, push_vec=None, pop_vec=None):
+        want_stack=False, stack_height=None, push_vec=None, pop_vec=None, null_vec=None):
         #########################################################
         #########################################################
         # Assign instance variables
@@ -21,6 +21,7 @@ class NWLSTM_Layer(object):
         self.stack_height = stack_height
         self.push_vec = push_vec
         self.pop_vec = pop_vec
+        self.null_vec = null_vec
         #########################################################
         #########################################################
         # Create weight/bias matrices and their symbolic shared variables
@@ -85,39 +86,7 @@ class NWLSTM_Layer(object):
         #########################################################
         #########################################################
 
-    def forward_prop(self, x, is_push, is_pop):
-        #########################################################
-        #########################################################
-        # Perform push/pops as necessary, updating stack and stack pointers
-        if self.want_stack:
-            postpush_stack_values, postpush_stack_ptrs = update_stack_for_push(self.stack, self.ptrs_to_top, is_push, self.h)
-            postpop_stack_values, postpop_stack_ptrs, h_popped = update_stack_for_pop(postpush_stack_values, postpush_stack_ptrs, is_pop)
-
-            self.stack = postpop_stack_values
-            self.ptrs_to_top = postpop_stack_ptrs
-            h_prime = self.W_h_prev_pop.dot(self.h) + self.W_h_stack_pop.dot(h_popped)
-        else:
-            h_prime = self.h
-        #########################################################
-        #########################################################
-        # Internal LSTM calculations
-        i = T.nnet.hard_sigmoid( self.W_x_i.dot(x) + self.W_h_i.dot(h_prime) + self.B_i )
-        o = T.nnet.hard_sigmoid( self.W_x_o.dot(x) + self.W_h_o.dot(h_prime) + self.B_o )
-        #f = T.nnet.sigmoid( self.W_x_f.dot(x) + self.W_h_f.dot(h_prime) + self.B_f )
-        g = self.activation( self.W_x_g.dot(x) + self.W_h_g.dot(h_prime) + self.B_g )
-
-        #c_t = f*self.c + i*g
-        c_t = self.c + i*g
-        h_t = o*self.activation(c_t)
-
-        self.c = c_t
-        self.h = h_t
-
-        return h_t
-        #########################################################
-        #########################################################
-    
-    def forward_prop2(self, x, h_prev, c_prev, is_push, is_pop):
+    def forward_prop(self, x, h_prev, c_prev, is_push, is_pop, is_null):
         #########################################################
         #########################################################
         # Perform push/pops as necessary, updating stack and stack pointers
@@ -142,7 +111,12 @@ class NWLSTM_Layer(object):
         #c_t = c_prev + i*g
         h_t = o*self.activation(c_t)
 
-        return h_t, c_t
+        if self.want_stack:
+            h_t2 = T.switch(T.eq(is_null,1), h_t*0., h_t)
+            c_t2 = T.switch(T.eq(is_null,1), c_t*0., c_t)
+            return h_t2, c_t2
+        else:
+            return h_t, c_t
         #########################################################
         #########################################################
 
