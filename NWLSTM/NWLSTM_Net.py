@@ -4,12 +4,12 @@ import theano
 from theano import tensor as T, function, printing, gradient
 from utils import *
 from NWLSTM_Layer import NWLSTM_Layer
-#from theano.compile.nanguardmode import NanGuardMode
+from theano.compile.nanguardmode import NanGuardMode
 
 class NWLSTM_Net:
     def __init__(self, word_dim, hidden_dim=100, minibatch_dim=1, bptt_truncate=4, num_layers=2,
         optimization='RMSprop', activation='tanh', want_stack=False, stack_height=None, 
-        push_vec=None, pop_vec=None, softmax_temperature=1, null_vec=None, dropout=0, l1_rate=.01, l2_rate=.01):
+        push_vec=None, pop_vec=None, softmax_temp=1, null_vec=None, dropout=1, l1_rate=.01, l2_rate=.01):
         #########################################################
         #########################################################
         # Assign instance variables
@@ -18,10 +18,11 @@ class NWLSTM_Net:
         self.minibatch_dim = minibatch_dim
         self.bptt_truncate = bptt_truncate
         self.optimization = optimization
-        self.softmax_temperature = softmax_temperature
+        #self.softmax_temperature = softmax_temperature
         self.dropout = dropout
         self.PUSH = T.addbroadcast(T.zeros((word_dim,1)), 1)
         self.POP = T.addbroadcast(T.zeros((word_dim,1)), 1)
+        self.NULL = T.addbroadcast(T.zeros((word_dim,1)), 1)
         self.want_stack = want_stack
         #########################################################
         #########################################################
@@ -74,12 +75,18 @@ class NWLSTM_Net:
         # Symbolic input/output variables and test values (for when theano.config.compute_test_value='raise')
         x = T.tensor3('x', dtype=theano.config.floatX)
         y = T.tensor3('y', dtype=theano.config.floatX)
+        softmax_temperature = T.scalar('softmax_temperature', dtype=theano.config.floatX)
         learning_rate = T.scalar('learning_rate', dtype=theano.config.floatX)
+        h_init = T.tensor3('h_init', dtype=theano.config.floatX)
+        c_init = T.tensor3('c_init', dtype=theano.config.floatX)
         
         sequence_length = 7
         x.tag.test_value = np.random.uniform(0, 1, size=(sequence_length,self.word_dim,self.minibatch_dim)).astype(theano.config.floatX)
         y.tag.test_value = np.random.uniform(0, 1, size=(sequence_length,self.word_dim,self.minibatch_dim)).astype(theano.config.floatX)
         learning_rate.tag.test_value = .001
+        softmax_temperature.tag.test_value = 1
+        h_init.tag.test_value = np.random.uniform(-.01,.01, (len(self.layers),self.hidden_dim, self.minibatch_dim)).astype(theano.config.floatX)
+        c_init.tag.test_value = np.random.uniform(-.01,.01, (len(self.layers),self.hidden_dim, self.minibatch_dim)).astype(theano.config.floatX)
         #########################################################
         #########################################################
         # Scan functions
@@ -87,24 +94,32 @@ class NWLSTM_Net:
             nonsymbolic_masks = []
             for layer in self.layers:
                 rng = T.shared_randomstreams.RandomStreams(np.random.randint(999999))
-                mask = rng.binomial(p=1-self.dropout, size=(layer.hidden_dim,layer.minibatch_dim), dtype=theano.config.floatX)
+                mask = rng.binomial(p=self.dropout, size=(layer.hidden_dim,layer.minibatch_dim), dtype=theano.config.floatX)
 
                 nonsymbolic_masks.append(mask)
 
-            masks = T.stack(nonsymbolic_masks, axis=2)
+            # T.stack gives (minibatch_dim,hidden_dim,layer_num) and we want (hidden_dim,minibatch_dim,layer_num) for point-wise multiplication
+            masks = T.stack(nonsymbolic_masks)
+            masks = T.swapaxes(masks, 0, 2)
+            masks = T.swapaxes(masks, 0, 1)
 
             return masks
 
         def make_h_c_inits():
-            h_inits = []
-            c_inits = []
+            # h_inits = []
+            # c_inits = []
             
-            h_init = T.unbroadcast(T.zeros((self.hidden_dim, self.minibatch_dim)), 1)
-            c_init = T.unbroadcast(T.zeros((self.hidden_dim, self.minibatch_dim)), 1)
+            # h_init = T.unbroadcast(T.zeros((self.hidden_dim, self.minibatch_dim)), 1)
+            # c_init = T.unbroadcast(T.zeros((self.hidden_dim, self.minibatch_dim)), 1)
+            h_inits = np.random.uniform(-.01,.01, (len(self.layers),self.hidden_dim, self.minibatch_dim))
+            self.h_inits = theano.shared(name='h_inits', value=h_inits.astype(theano.config.floatX))
+            c_inits = np.random.uniform(-.01,.01, (len(self.layers),self.hidden_dim, self.minibatch_dim))
+            self.c_inits = theano.shared(name='c_inits', value=c_inits.astype(theano.config.floatX))
+            #self.params.extend([self.h_inits,self.c_inits])
 
-            for _ in self.layers:
-                h_inits.append(h_init)
-                c_inits.append(c_init)
+            # for _ in self.layers:
+            #     h_inits.append(h_init)
+            #     c_inits.append(c_init)
 
             return h_inits, c_inits
 
@@ -122,31 +137,28 @@ class NWLSTM_Net:
             is_push = is_push.reshape((self.minibatch_dim,1,1))
             is_pop = is_pop.reshape((self.minibatch_dim,1,1))
 
+            return is_push, is_pop
+
+        def get_is_null(x, null_vec):
+            argm_xt = T.argmax(x, axis=0)
             argm_is_null = T.argmax(self.NULL, axis=0)
             is_null = T.eq(argm_xt, argm_is_null)
 
-            return is_push, is_pop, is_null
+            return is_null
 
         def forward_prop_step(x_t, masks, h_prevs, c_prevs):
-
             # determine, for all layers, if this input was a push/pop
-            is_push, is_pop, is_null = map_push_pop(x_t, self.PUSH, self.POP)
-            #is_null = T.all(T.eq(x_t,T.zeros(x_t.shape)))
-            
-
+            is_push, is_pop = map_push_pop(x_t, self.PUSH, self.POP)
+            is_null = get_is_null(x_t, self.NULL)
 
             nonsymbolic_hs = []
             nonsymbolic_cs = []
 
-            h,c = self.layers[0].forward_prop(x_t, h_prevs[0], c_prevs[0], is_push, is_pop, is_null)
-            h = h*masks[:,:,0] # dropout
-
-            nonsymbolic_hs.append(h)
-            nonsymbolic_cs.append(c)
-
-            for i,layer in enumerate(self.layers[1:]):
-                h,c = layer.forward_prop(h, h_prevs[i], c_prevs[i], is_push, is_pop, is_null)
-                h = h*masks[:,:,i] # dropout
+            h = x_t
+            for i,layer in enumerate(self.layers):
+                
+                h,c = layer.forward_prop(h, h_prevs[i,:,:], c_prevs[i,:,:], is_push, is_pop, is_null)
+                h = h*masks[:,:,i] / self.dropout # inverted dropout for scaling
 
                 nonsymbolic_hs.append(h)
                 nonsymbolic_cs.append(c)
@@ -161,7 +173,7 @@ class NWLSTM_Net:
         #########################################################
         #########################################################
         # Scan calls
-        h_inits,c_inits = make_h_c_inits()
+        # h_inits,c_inits = make_h_c_inits()
 
         masks, _ = theano.scan(
             make_masks,
@@ -171,7 +183,7 @@ class NWLSTM_Net:
         (o,h,c), _ = theano.scan(
             forward_prop_step,
             sequences=[x,masks],
-            outputs_info=[None,h_inits,c_inits],
+            outputs_info=[None,h_init,c_init],
             truncate_gradient=self.bptt_truncate)
 
         #########################################################
@@ -180,30 +192,26 @@ class NWLSTM_Net:
         # comput softmax in numerically stable, column-wise way
         # move distribution axis to the end, collapse sequences/minibatches along first axis, calculate softmax
         # for each of the sequence_length*num_minibatches rows, then re-roll and swap axes back
-        # theano.printing.Print('o')(o)
         swapped_o = T.swapaxes(o,1,2)
         swapped_flat_o = swapped_o.reshape((-1,swapped_o.shape[-1]))
         clipped_swapped_flat_o1 = T.clip(swapped_flat_o, -5., 5.) # don't exponentiate numbers too big/small
-        clipped_swapped_flat_o2 = np.exp(clipped_swapped_flat_o1 / self.softmax_temperature)
+        clipped_swapped_flat_o2 = T.exp(clipped_swapped_flat_o1 / softmax_temperature)
         clipped_swapped_flat_o3 = clipped_swapped_flat_o2 / clipped_swapped_flat_o2.sum(axis=1, keepdims=True)
         softmaxed_swapped_o = clipped_swapped_flat_o3.reshape(swapped_o.shape)
         softmaxed_o = T.swapaxes(softmaxed_swapped_o,1,2)
-        #softmaxed_o = theano.printing.Print('softmaxed o')(softmaxed_o)
         
 
         # clip softmaxed probabilites to avoid explosion/vanishing during crossentropy calculation
         clipped_softmaxed_o = T.clip(softmaxed_o, 1e-6, 1 - 1e-6)
-        o_error = T.sum(T.nnet.categorical_crossentropy(clipped_softmaxed_o,y))# / T.cast(x.shape[0], 'float32')
+        o_error = T.sum(T.nnet.categorical_crossentropy(clipped_softmaxed_o,y))
         #o_error = T.sum((clipped_softmaxed_o-y)**2)
 
-        L1 = T.sum([abs(p).sum() for p in self.params if 'B' not in p.name])
-        L2 = T.sum([(p**2).sum() for p in self.params if 'B' not in p.name])
+        L1 = T.sum([abs(p).sum() for p in self.params if 'W' in p.name]) / T.cast(len(self.layers), theano.config.floatX)
+        L2 = T.sum([(p**2).sum() for p in self.params if 'W' in p.name]) / T.cast(len(self.layers), theano.config.floatX)
 
         regularized_error = o_error + l1_rate*L1 + l2_rate*L2
-        self.ce_error = theano.function([x, y], [o_error, l1_rate*L1, l2_rate*L2])
-        self.forward_propagation = theano.function([x], softmaxed_o)
-        #grads = theano.grad(cost=o_error, wrt=self.params, consider_constant=[masks])
-        #self.get_grads = theano.function([x,y], grads)
+        self.ce_error = theano.function([x, y, h_init,c_init, softmax_temperature], [o_error, L1, L2])
+        self.forward_propagation = theano.function([x,h_init,c_init,softmax_temperature], softmaxed_o)
         ###########################################################################
         ###########################################################################
         # Optimization methods
@@ -242,15 +250,14 @@ class NWLSTM_Net:
         if self.optimization=='RMSprop': updates = RMSprop(regularized_error, self.params, learning_rate=learning_rate)
         elif self.optimization=='SGD': updates = SGD(regularized_error, self.params, learning_rate=learning_rate)
 
-        self.train_model = theano.function(inputs=[x,y,learning_rate],
-                                      outputs=[],
-                                      updates=updates)#, mode=NanGuardMode(nan_is_error=True,inf_is_error=True,big_is_error=True)                 
+        self.train_model = theano.function(inputs=[x,y,h_init,c_init,learning_rate,softmax_temperature],
+                                      outputs=[h[0,:,:],c[0,:,:]],
+                                      updates=updates)#, mode=NanGuardMode(nan_is_error=True,inf_is_error=True,big_is_error=True))                 
         ###########################################################################
         ###########################################################################
 
-    def loss_for_minibatch(self, X, Y):
-        #return float(self.ce_error(X,Y))
-        return [float(_) for _ in self.ce_error(X,Y)]
+    def loss_for_minibatch(self, X, Y, h,c,softmax):
+        return [float(_) for _ in self.ce_error(X,Y, h,c,softmax)]
 
 
 

@@ -9,9 +9,9 @@ from NWLSTM_Net import NWLSTM_Net
 
 # Data parameters
 MAX_MINIBATCHES = False
-MINIBATCH_SIZE = 2#128
-SEQUENCE_LENGTH = 50#100
-BPTT_TRUNCATE = -1#25
+MINIBATCH_SIZE = 100
+SEQUENCE_LENGTH = 100
+BPTT_TRUNCATE = -1
 
 # Stack parameters
 WANT_STACK = False
@@ -22,7 +22,7 @@ CONTEXT_TO_PUSH = 5
 NULL = 'NULL_TOKEN'
 
 # Layer parameters
-HIDDEN_DIM = 256
+HIDDEN_DIM = 512
 NUM_LAYERS = 2
 ACTIVATION = 'tanh'
 
@@ -31,11 +31,13 @@ OPTIMIZATION = 'RMSprop' # RMSprop or SGD
 LEARNING_RATE = .001
 DROPOUT = .5
 NEPOCH = 1000
-EVAL_LOSS_AFTER = 1
+EVAL_LOSS_AFTER = 100
+L1_REGULARIZATION = .0001
+L2_REGULARIZATION = .01
 
 # Data source parameters
-#DATAFILE = '../data/war_and_peace.txt'
-DATAFILE = '../data/tmp.txt'
+DATAFILE = '../data/war_and_peace.txt'
+#DATAFILE = '../data/tmp.txt'
 MODEL_FILE = None
 
 
@@ -48,19 +50,23 @@ theano.config.floatX = 'float32'
 
 print "Training NWLSTM with parameters:\
     \nMax Number of Minibatches: {0}\
-    \nHidden Layer: {1}\
-    \nNumber of Layers: {2}\
-    \nStack: {8}\
-    \nLearning Rate: {3}\
-    \nDropout: {9}\
-    \nOptimization: {11}\
-    \nActivation: {12}\
     \nMinibatch size: {4}\
     \nSequence Length: {5}\
     \nTruncate gradient: {10}\
+    \nStack: {8}\
+    \nHidden Layer: {1}\
+    \nNumber of Layers: {2}\
+    \nActivation: {12}\
+    \nOptimization: {11}\
+    \nLearning Rate: {3}\
+    \nDropout: {9}\
     \nNumber of epochs: {6}\
+    \nEvaluate loss every: {13}\
+    \nL1 Regularization: {14}\
+    \nL2 Regularization: {15}\
     \nLoading from model: {7}\n".format(MAX_MINIBATCHES, HIDDEN_DIM, NUM_LAYERS, LEARNING_RATE, MINIBATCH_SIZE,
-        SEQUENCE_LENGTH, NEPOCH, MODEL_FILE, WANT_STACK, DROPOUT, BPTT_TRUNCATE, OPTIMIZATION, ACTIVATION)
+        SEQUENCE_LENGTH, NEPOCH, MODEL_FILE, WANT_STACK, DROPOUT, BPTT_TRUNCATE, OPTIMIZATION, ACTIVATION, EVAL_LOSS_AFTER,
+        L1_REGULARIZATION,L2_REGULARIZATION)
 
 def one_hot(x, dimensions):
     tmp = np.zeros(dimensions)
@@ -92,15 +98,51 @@ def parseFileForCharacterDicts(filename):
     char_to_code_dict[NULL] = ALPHABET_LENGTH-1
     code_to_char_dict[ALPHABET_LENGTH-1] = NULL
 
-    print char_to_code_dict
-
     #ALPHABET_LENGTH+=1 #dicts are zero-indexed, but we want to create vectors of size one greater
 
     return char_to_code_dict, code_to_char_dict, ALPHABET_LENGTH
 
+def readFrom(filename, a, b):
+  with open(filename) as f:
+    f.seek(a)
+    chars = []
+    for _ in xrange(b-a):
+      c = f.read(1)
+      if not c: break
+      chars.append(c)
+
+    while len(chars)<(b-a):
+        chars.append(NULL)
+
+  return chars
+
+def readFile2(filename):
+    minibatches_yielded = 0
+    startend_positions = [(start,start+SEQUENCE_LENGTH) for start in xrange(MINIBATCH_SIZE)]
+    last_pos = SEQUENCE_LENGTH+MINIBATCH_SIZE
+    while True:
+        with open(filename) as f:
+            f.seek(last_pos-2)
+            c = f.read(1)
+            if not c: break
+            last_pos+=1
+        current_minibatch = []
+        for start,end in startend_positions:
+            current_minibatch.append(readFrom(filename,start,end))
+
+        if len(current_minibatch)<MINIBATCH_SIZE:
+            current_minibatch = nullOutMinibatch(current_minibatch, SEQUENCE_LENGTH, MINIBATCH_SIZE)
+        yield current_minibatch
+        minibatches_yielded+=1
+        if MAX_MINIBATCHES and minibatches_yielded>=MAX_MINIBATCHES: break
+
+        startend_positions = [(x+1,y+1) for x,y in startend_positions]
+
+
+
 def readFile(filename, dictsFile=None, outputDictsToFile=None):
     with open(filename, 'rb') as f:
-        
+
         minibatches_yielded = 0
         current_minibatch = []
         current_sequence = []
@@ -202,17 +244,34 @@ def readFileGenerator(datafile, want_stack):
     else:
         return readFileWithUnmatchedLefts(datafile)
 
+def testreadFile(filename):
+    chars = []
+    with open(filename, 'rb') as f:
+        while True:
+            c = f.read(1)
+            if not c: break
+
+            chars.append(c)
+
+            if len(chars)>SEQUENCE_LENGTH:
+                yield [chars]
+                chars = [chars[-1]]
+
 def main():
-    print "Parsing for set of characters: {0}".format(DATAFILE)
+    print "Parsing for set of characters: {0}\n".format(DATAFILE)
     char_to_code_dict, code_to_char_dict, ALPHABET_LENGTH = parseFileForCharacterDicts(DATAFILE)
-    print "Found {0} characters: {1}\n".format(ALPHABET_LENGTH, char_to_code_dict.keys())
+    print "char_to_code_dict: {0}\ncode_to_char_dict: {1}\n".format(char_to_code_dict, code_to_char_dict)
 
 
+    # for mb in readFile2(DATAFILE):
+    #     print mb
+    # sys.exit()
     # for minibatch in readFileWithUnmatchedLefts(DATAFILE):
     #     for seq in minibatch:
     #         print len(seq), seq
     #     print 
     # sys.exit()
+
 
     print "Compiling model..."
     if MODEL_FILE != None:
@@ -224,18 +283,22 @@ def main():
         t1 = time.time()
         model = NWLSTM_Net(word_dim=ALPHABET_LENGTH, hidden_dim=HIDDEN_DIM, minibatch_dim=MINIBATCH_SIZE, bptt_truncate=BPTT_TRUNCATE,
                            num_layers=NUM_LAYERS, optimization=OPTIMIZATION, activation=ACTIVATION, want_stack=WANT_STACK,
-                           stack_height=STACK_HEIGHT, push_vec=push_vec, pop_vec=pop_vec, null_vec=null_vec, dropout=DROPOUT)
+                           stack_height=STACK_HEIGHT, push_vec=push_vec, pop_vec=pop_vec, null_vec=null_vec, dropout=DROPOUT,
+                           l1_rate=L1_REGULARIZATION, l2_rate=L2_REGULARIZATION)
         t2 = time.time()
         model.char_to_code_dict = char_to_code_dict
         model.code_to_char_dict = code_to_char_dict
         print "Finished! Compiling model took: {0:.0f} seconds\n".format(t2 - t1)
 
 
-    losses=[]
+
+    losses = []
     counter = 0
+    softmax_temp = 1
     for epoch in xrange(NEPOCH):
-        #print "Epoch: {0}".format(epoch)
-        for minibatch in readFileGenerator(DATAFILE, WANT_STACK):
+        h_prev = np.zeros((NUM_LAYERS,HIDDEN_DIM,MINIBATCH_SIZE)).astype('float32')
+        c_prev = np.zeros((NUM_LAYERS,HIDDEN_DIM,MINIBATCH_SIZE)).astype('float32')
+        for minibatch in readFile2(DATAFILE):#readFileGenerator(DATAFILE, WANT_STACK):
             #print "Current minibatch: {0}".format([[str(c) for c in seq] for seq in minibatch])
 
             x = np.dstack([np.asarray([one_hot(char_to_code_dict[c], ALPHABET_LENGTH) for c in seq[:-1]]) for seq in minibatch])
@@ -246,25 +309,25 @@ def main():
                 # print minibatch
                 if epoch==0: print "Dims of one minibatch: {0}".format(x.shape)
                 t1 = time.time()
-                model.train_model(x, y, LEARNING_RATE)
+                h_prev,c_prev = model.train_model(x, y, h_prev, c_prev, LEARNING_RATE, softmax_temp)
                 t2 = time.time()
                 if counter%(EVAL_LOSS_AFTER*10)==0: print "One SGD step took: {0:.2f} milliseconds".format((t2 - t1) * 1000.)
 
                 # probs = model.forward_propagation(x)
                 # print probs
-                loss, l1_loss, l2_loss = model.loss_for_minibatch(x,y)
+                loss, l1_loss, l2_loss = model.loss_for_minibatch(x, y, h_prev, c_prev, softmax_temp)
                 losses.append((epoch, loss))
                 dt = datetime.datetime.now().strftime("%m-%d___%H-%M-%S")
-                print "{0}: Loss on first minibatch after epoch={1}: {2:.1f},{3:.1f},{4:.1f}".format(dt, epoch, loss, l1_loss, l2_loss)
+                print "{0}: Loss after {1} examples, epoch={2}:  {3:.0f}    {4:.0f}    {5:.0f}".format(dt, counter, epoch, loss, l1_loss, l2_loss)
                 
                 save_model_parameters_lstm("saved_model_parameters/NWLSTM_savedparameters_{0:.1f}__{1}.npz".format(loss, dt), model)
             else:
-                model.train_model(x, y, LEARNING_RATE)
+                h_prev, c_prev = model.train_model(x, y, h_prev, c_prev, LEARNING_RATE, softmax_temp)
 
             counter+=1
 
 
-    print "{0}: Loss after all epochs: {1:.1f}".format(dt, loss)
+    print "{0}: Loss after {1} examples, {2} epochs: {3:.1f}".format(dt, counter, epoch, loss)
     save_model_parameters_lstm("saved_model_parameters/NWLSTM_savedparameters_{0:.1f}__{1}.npz".format(loss, dt), model)          
 
 

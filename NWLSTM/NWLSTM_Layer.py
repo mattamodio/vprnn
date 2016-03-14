@@ -70,15 +70,17 @@ class NWLSTM_Layer(object):
         #########################################################
         #########################################################
         # Initialize hidden/cell states
-        self.h = T.cast(T.unbroadcast(T.zeros((hidden_dim, minibatch_dim)), 1), theano.config.floatX)
-        self.c = T.cast(T.unbroadcast(T.zeros((hidden_dim, minibatch_dim)), 1), theano.config.floatX)
+        # zeros = np.zeros((hidden_dim, minibatch_dim))
+        # self.h = theano.shared(name='h', value=zeros.astype(theano.config.floatX))
+        # self.c = theano.shared(name='c', value=zeros.astype(theano.config.floatX))
+        #T.cast(T.unbroadcast(T.zeros((hidden_dim, minibatch_dim)), 1), theano.config.floatX))
         #########################################################
         #########################################################
         # Group parameters together
         self.params = []
         self.params.extend([self.W_x_i,self.W_h_i,self.B_i,
                             self.W_x_o,self.W_h_o,self.B_o,
-                            self.W_x_f,self.W_h_f,self.B_f,
+        #                    self.W_x_f,self.W_h_f,self.B_f,
                             self.W_x_g,self.W_h_g,self.B_g])
 
         if self.want_stack:
@@ -91,12 +93,12 @@ class NWLSTM_Layer(object):
         #########################################################
         # Perform push/pops as necessary, updating stack and stack pointers
         if self.want_stack:
-            postpush_stack_values, postpush_stack_ptrs = update_stack_for_push(self.stack, self.ptrs_to_top, is_push, self.h)
+            postpush_stack_values, postpush_stack_ptrs = update_stack_for_push(self.stack, self.ptrs_to_top, is_push, h_prev)
             postpop_stack_values, postpop_stack_ptrs, h_popped = update_stack_for_pop(postpush_stack_values, postpush_stack_ptrs, is_pop)
 
             self.stack = postpop_stack_values
             self.ptrs_to_top = postpop_stack_ptrs
-            h_prime = self.W_h_prev_pop.dot(self.h) + self.W_h_stack_pop.dot(h_popped)
+            h_prime = self.W_h_prev_pop.dot(h_prev) + self.W_h_stack_pop.dot(h_popped)
         else:
             h_prime = h_prev
         #########################################################
@@ -104,19 +106,21 @@ class NWLSTM_Layer(object):
         # Internal LSTM calculations
         i = T.nnet.hard_sigmoid( self.W_x_i.dot(x) + self.W_h_i.dot(h_prime) + self.B_i )
         o = T.nnet.hard_sigmoid( self.W_x_o.dot(x) + self.W_h_o.dot(h_prime) + self.B_o )
-        f = T.nnet.sigmoid( self.W_x_f.dot(x) + self.W_h_f.dot(h_prime) + self.B_f )
+        #f = T.nnet.sigmoid( self.W_x_f.dot(x) + self.W_h_f.dot(h_prime) + self.B_f )
         g = self.activation( self.W_x_g.dot(x) + self.W_h_g.dot(h_prime) + self.B_g )
 
-        c_t = f*self.c + i*g
-        #c_t = c_prev + i*g
-        h_t = o*self.activation(c_t)
+
+        #c = f*c_prev + i*g
+        c = c_prev + i*g
+        h = o*self.activation(c_prev)
+
 
         if self.want_stack:
             h_t2 = T.switch(T.eq(is_null,1), h_t*0., h_t)
             c_t2 = T.switch(T.eq(is_null,1), c_t*0., c_t)
             return h_t2, c_t2
         else:
-            return h_t, c_t
+            return h, c
         #########################################################
         #########################################################
 
