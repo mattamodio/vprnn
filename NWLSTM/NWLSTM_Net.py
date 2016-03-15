@@ -89,7 +89,7 @@ class NWLSTM_Net:
         c_init.tag.test_value = np.random.uniform(-.01,.01, (len(self.layers),self.hidden_dim, self.minibatch_dim)).astype(theano.config.floatX)
         #########################################################
         #########################################################
-        # Scan functions
+        # Helper functions
         def make_masks(x):
             nonsymbolic_masks = []
             for layer in self.layers:
@@ -104,24 +104,6 @@ class NWLSTM_Net:
             masks = T.swapaxes(masks, 0, 1)
 
             return masks
-
-        def make_h_c_inits():
-            # h_inits = []
-            # c_inits = []
-            
-            # h_init = T.unbroadcast(T.zeros((self.hidden_dim, self.minibatch_dim)), 1)
-            # c_init = T.unbroadcast(T.zeros((self.hidden_dim, self.minibatch_dim)), 1)
-            h_inits = np.random.uniform(-.01,.01, (len(self.layers),self.hidden_dim, self.minibatch_dim))
-            self.h_inits = theano.shared(name='h_inits', value=h_inits.astype(theano.config.floatX))
-            c_inits = np.random.uniform(-.01,.01, (len(self.layers),self.hidden_dim, self.minibatch_dim))
-            self.c_inits = theano.shared(name='c_inits', value=c_inits.astype(theano.config.floatX))
-            #self.params.extend([self.h_inits,self.c_inits])
-
-            # for _ in self.layers:
-            #     h_inits.append(h_init)
-            #     c_inits.append(c_init)
-
-            return h_inits, c_inits
 
         def map_push_pop(x, push_vec, pop_vec):
             BroadcastToAllHiddenDims_Type = T.TensorType(theano.config.floatX, (True,True,True))
@@ -146,6 +128,20 @@ class NWLSTM_Net:
 
             return is_null
 
+        def columnwise_softmax(o):
+            # comput softmax in numerically stable, column-wise way
+            # move distribution axis to the end, collapse sequences/minibatches along first axis, calculate softmax
+            # for each of the sequence_length*num_minibatches rows, then re-roll and swap axes back
+            swapped_o = T.swapaxes(o,1,2)
+            swapped_flat_o = swapped_o.reshape((-1,swapped_o.shape[-1]))
+            clipped_swapped_flat_o1 = T.clip(swapped_flat_o, -5., 5.) # don't exponentiate numbers too big/small
+            clipped_swapped_flat_o2 = T.exp(clipped_swapped_flat_o1 / softmax_temperature)
+            clipped_swapped_flat_o3 = clipped_swapped_flat_o2 / clipped_swapped_flat_o2.sum(axis=1, keepdims=True)
+            softmaxed_swapped_o = clipped_swapped_flat_o3.reshape(swapped_o.shape)
+            softmaxed_o = T.swapaxes(softmaxed_swapped_o,1,2)
+
+            return softmaxed_o
+
         def forward_prop_step(x_t, masks, h_prevs, c_prevs):
             # determine, for all layers, if this input was a push/pop
             is_push, is_pop = map_push_pop(x_t, self.PUSH, self.POP)
@@ -156,7 +152,6 @@ class NWLSTM_Net:
 
             h = x_t
             for i,layer in enumerate(self.layers):
-                
                 h,c = layer.forward_prop(h, h_prevs[i,:,:], c_prevs[i,:,:], is_push, is_pop, is_null)
                 h = h*masks[:,:,i] / self.dropout # inverted dropout for scaling
 
@@ -173,7 +168,6 @@ class NWLSTM_Net:
         #########################################################
         #########################################################
         # Scan calls
-        # h_inits,c_inits = make_h_c_inits()
 
         masks, _ = theano.scan(
             make_masks,
@@ -189,29 +183,19 @@ class NWLSTM_Net:
         #########################################################
         #########################################################
         # Error calculation and model interface functions
-        # comput softmax in numerically stable, column-wise way
-        # move distribution axis to the end, collapse sequences/minibatches along first axis, calculate softmax
-        # for each of the sequence_length*num_minibatches rows, then re-roll and swap axes back
-        swapped_o = T.swapaxes(o,1,2)
-        swapped_flat_o = swapped_o.reshape((-1,swapped_o.shape[-1]))
-        clipped_swapped_flat_o1 = T.clip(swapped_flat_o, -5., 5.) # don't exponentiate numbers too big/small
-        clipped_swapped_flat_o2 = T.exp(clipped_swapped_flat_o1 / softmax_temperature)
-        clipped_swapped_flat_o3 = clipped_swapped_flat_o2 / clipped_swapped_flat_o2.sum(axis=1, keepdims=True)
-        softmaxed_swapped_o = clipped_swapped_flat_o3.reshape(swapped_o.shape)
-        softmaxed_o = T.swapaxes(softmaxed_swapped_o,1,2)
-        
-
-        # clip softmaxed probabilites to avoid explosion/vanishing during crossentropy calculation
+        softmaxed_o = columnwise_softmax(o)
         clipped_softmaxed_o = T.clip(softmaxed_o, 1e-6, 1 - 1e-6)
-        o_error = T.sum(T.nnet.categorical_crossentropy(clipped_softmaxed_o,y))
-        #o_error = T.sum((clipped_softmaxed_o-y)**2)
+
+        o_error = T.sum( T.nnet.categorical_crossentropy(clipped_softmaxed_o,y) )
+        #o_error = T.sum( (clipped_softmaxed_o-y)**2 )
 
         L1 = T.sum([abs(p).sum() for p in self.params if 'W' in p.name]) / T.cast(len(self.layers), theano.config.floatX)
         L2 = T.sum([(p**2).sum() for p in self.params if 'W' in p.name]) / T.cast(len(self.layers), theano.config.floatX)
 
         regularized_error = o_error + l1_rate*L1 + l2_rate*L2
-        self.ce_error = theano.function([x, y, h_init,c_init, softmax_temperature], [o_error, L1, L2])
-        self.forward_propagation = theano.function([x,h_init,c_init,softmax_temperature], softmaxed_o)
+
+        self.ce_error = theano.function([x, y, h_init, c_init, softmax_temperature], [o_error, L1, L2])
+        self.forward_propagation = theano.function([x, h_init, c_init, softmax_temperature], [softmaxed_o, h[-1,:,:], c[-1,:,:]])
         ###########################################################################
         ###########################################################################
         # Optimization methods
@@ -256,8 +240,10 @@ class NWLSTM_Net:
         ###########################################################################
         ###########################################################################
 
-    def loss_for_minibatch(self, X, Y, h,c,softmax):
-        return [float(_) for _ in self.ce_error(X,Y, h,c,softmax)]
+
+    def loss_for_minibatch(self, X, Y, h, c, softmax):
+
+        return [float(loss_component) for loss_component in self.ce_error(X, Y, h, c, softmax)]
 
 
 

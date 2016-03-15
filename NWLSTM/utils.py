@@ -20,7 +20,7 @@ def save_model_parameters_lstm(outfile, model):
     np.savez(outfile, **values)
     print "Saved {0} model parameters to {1}".format(len(values.keys()), outfile)
 
-def load_model_parameters_lstm(path, sample=1, softmax_temperature=1):
+def load_model_parameters_lstm(path, softmax_temperature=1, activation='tanh', stack_height=15):
     npzfile = np.load(path)
 
     print "Building model from {0} with hidden_dim: {1}, word_dim: {2} and num_layers: {3}".format(path, npzfile['hidden_dim'], npzfile['word_dim'], npzfile['num_layers'])
@@ -29,11 +29,11 @@ def load_model_parameters_lstm(path, sample=1, softmax_temperature=1):
     t1 = time.time()
     model = NWLSTM_Net(word_dim=npzfile['word_dim'],
         hidden_dim=npzfile['hidden_dim'],
-        minibatch_dim=sample,
+        minibatch_dim=npzfile['minibatch_dim'],
         num_layers=npzfile['num_layers'], 
-        activation='tanh',
+        activation=activation,
         want_stack=npzfile['want_stack'],
-        stack_height=15, 
+        stack_height=stack_height, 
         push_vec=npzfile['PUSH'],
         pop_vec=npzfile['POP'])
 

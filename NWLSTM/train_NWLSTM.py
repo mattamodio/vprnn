@@ -6,6 +6,7 @@ import theano
 import theano.tensor as T
 from utils import *
 from NWLSTM_Net import NWLSTM_Net
+from generate_from_NWLSTM import generate_sentence
 
 # Data parameters
 MAX_MINIBATCHES = False
@@ -16,8 +17,8 @@ BPTT_TRUNCATE = -1
 # Stack parameters
 WANT_STACK = False
 STACK_HEIGHT = 15
-PUSH_CHAR = 'b'#u'\t'
-POP_CHAR = 'c'#u'\n'
+PUSH_CHAR = '1'#u'\t'
+POP_CHAR = '2'#u'\n'
 CONTEXT_TO_PUSH = 5
 NULL = 'NULL_TOKEN'
 
@@ -36,10 +37,17 @@ L1_REGULARIZATION = .0001
 L2_REGULARIZATION = .01
 
 # Data source parameters
-DATAFILE = '../data/war_and_peace.txt'
-#DATAFILE = '../data/tmp.txt'
+#DATAFILE = '../data/war_and_peace.txt'
+DATAFILE = '../data/tmp.txt'
 MODEL_FILE = None
 
+# Sampling parameters
+SAMPLE = True
+STARTING_STRING = 'aaaaabbbbbcccccddddd1aaaaabbbbb'
+SAMPLE_EVERY = 100
+SAMPLE_LIMIT = 25
+SAMPLE_NUMBER = 1
+SOFTMAX_TEMPS = [.4,6]
 
 # theano.config.optimizer = 'None'
 # theano.config.compute_test_value = 'raise'
@@ -64,9 +72,10 @@ print "Training NWLSTM with parameters:\
     \nEvaluate loss every: {13}\
     \nL1 Regularization: {14}\
     \nL2 Regularization: {15}\
-    \nLoading from model: {7}\n".format(MAX_MINIBATCHES, HIDDEN_DIM, NUM_LAYERS, LEARNING_RATE, MINIBATCH_SIZE,
+    \nLoading from model: {7}\
+    \nSample: {16}, every {17} iterations\n".format(MAX_MINIBATCHES, HIDDEN_DIM, NUM_LAYERS, LEARNING_RATE, MINIBATCH_SIZE,
         SEQUENCE_LENGTH, NEPOCH, MODEL_FILE, WANT_STACK, DROPOUT, BPTT_TRUNCATE, OPTIMIZATION, ACTIVATION, EVAL_LOSS_AFTER,
-        L1_REGULARIZATION,L2_REGULARIZATION)
+        L1_REGULARIZATION,L2_REGULARIZATION,SAMPLE,SAMPLE_EVERY)
 
 def one_hot(x, dimensions):
     tmp = np.zeros(dimensions)
@@ -137,6 +146,7 @@ def readFile2(filename):
         if MAX_MINIBATCHES and minibatches_yielded>=MAX_MINIBATCHES: break
 
         startend_positions = [(x+1,y+1) for x,y in startend_positions]
+    print "Reached end of file"
 
 
 
@@ -263,19 +273,9 @@ def main():
     print "char_to_code_dict: {0}\ncode_to_char_dict: {1}\n".format(char_to_code_dict, code_to_char_dict)
 
 
-    # for mb in readFile2(DATAFILE):
-    #     print mb
-    # sys.exit()
-    # for minibatch in readFileWithUnmatchedLefts(DATAFILE):
-    #     for seq in minibatch:
-    #         print len(seq), seq
-    #     print 
-    # sys.exit()
-
-
     print "Compiling model..."
     if MODEL_FILE != None:
-        model = load_model_parameters_lstm(MODEL_FILE, minibatch_dim=MINIBATCH_SIZE)
+        model = load_model_parameters_lstm(MODEL_FILE)
     else:
         push_vec = one_hot(char_to_code_dict[PUSH_CHAR], ALPHABET_LENGTH).reshape((ALPHABET_LENGTH,1))
         pop_vec = one_hot(char_to_code_dict[POP_CHAR], ALPHABET_LENGTH).reshape((ALPHABET_LENGTH,1))
@@ -291,14 +291,14 @@ def main():
         print "Finished! Compiling model took: {0:.0f} seconds\n".format(t2 - t1)
 
 
-
     losses = []
     counter = 0
     softmax_temp = 1
     for epoch in xrange(NEPOCH):
         h_prev = np.zeros((NUM_LAYERS,HIDDEN_DIM,MINIBATCH_SIZE)).astype('float32')
         c_prev = np.zeros((NUM_LAYERS,HIDDEN_DIM,MINIBATCH_SIZE)).astype('float32')
-        for minibatch in readFile2(DATAFILE):#readFileGenerator(DATAFILE, WANT_STACK):
+
+        for minibatch in readFile2(DATAFILE):
             #print "Current minibatch: {0}".format([[str(c) for c in seq] for seq in minibatch])
 
             x = np.dstack([np.asarray([one_hot(char_to_code_dict[c], ALPHABET_LENGTH) for c in seq[:-1]]) for seq in minibatch])
@@ -313,18 +313,27 @@ def main():
                 t2 = time.time()
                 if counter%(EVAL_LOSS_AFTER*10)==0: print "One SGD step took: {0:.2f} milliseconds".format((t2 - t1) * 1000.)
 
-                # probs = model.forward_propagation(x)
-                # print probs
+
                 loss, l1_loss, l2_loss = model.loss_for_minibatch(x, y, h_prev, c_prev, softmax_temp)
                 losses.append((epoch, loss))
                 dt = datetime.datetime.now().strftime("%m-%d___%H-%M-%S")
-                print "{0}: Loss after {1} examples, epoch={2}:  {3:.0f}    {4:.0f}    {5:.0f}".format(dt, counter, epoch, loss, l1_loss, l2_loss)
-                
+                print "{0}: Loss after examples={1}, epoch={2}:  {3:.0f}    {4:.0f}    {5:.0f}".format(dt, counter, epoch, loss, l1_loss, l2_loss)
                 save_model_parameters_lstm("saved_model_parameters/NWLSTM_savedparameters_{0:.1f}__{1}.npz".format(loss, dt), model)
+
             else:
                 h_prev, c_prev = model.train_model(x, y, h_prev, c_prev, LEARNING_RATE, softmax_temp)
 
+
+            if SAMPLE and counter%SAMPLE_EVERY==0:
+                for softmax_temp in SOFTMAX_TEMPS:
+                    print "\nSampling sentence with softmax {0}".format(softmax_temp)
+                    for _ in xrange(SAMPLE_NUMBER):
+                        sent = generate_sentence(model, sample_limit=SAMPLE_LIMIT, softmax_temp=softmax_temp, starting_string=STARTING_STRING)
+                        print "".join(sent)
+                print
+
             counter+=1
+            
 
 
     print "{0}: Loss after {1} examples, {2} epochs: {3:.1f}".format(dt, counter, epoch, loss)
