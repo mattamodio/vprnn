@@ -11,14 +11,14 @@ from generate_from_NWLSTM import generate_sentence
 # Data parameters
 MAX_MINIBATCHES = False
 MINIBATCH_SIZE = 100
-SEQUENCE_LENGTH = 100
-BPTT_TRUNCATE = -1
+SEQUENCE_LENGTH = 100 #SEQUENCE_LENGTH>=MINIBATCH_SIZE REQUIRED
+BPTT_TRUNCATE = 50
 
 # Stack parameters
 WANT_STACK = False
 STACK_HEIGHT = 15
-PUSH_CHAR = '1'#u'\t'
-POP_CHAR = '2'#u'\n'
+PUSH_CHAR = '1'
+POP_CHAR = '2'
 CONTEXT_TO_PUSH = 5
 NULL = 'NULL_TOKEN'
 
@@ -31,23 +31,40 @@ ACTIVATION = 'tanh'
 OPTIMIZATION = 'RMSprop' # RMSprop or SGD
 LEARNING_RATE = .001
 DROPOUT = .5
-NEPOCH = 1000
+NEPOCH = 10000
 EVAL_LOSS_AFTER = 100
 L1_REGULARIZATION = .0001
 L2_REGULARIZATION = .01
 
 # Data source parameters
-#DATAFILE = '../data/war_and_peace.txt'
-DATAFILE = '../data/tmp.txt'
+#DATAFILE = '../data/tmp.txt'
+DATAFILE = '../data/simcity.txt'
 MODEL_FILE = None
 
 # Sampling parameters
 SAMPLE = True
-STARTING_STRING = 'aaaaabbbbbcccccddddd1aaaaabbbbb'
-SAMPLE_EVERY = 100
-SAMPLE_LIMIT = 25
+#STARTING_STRING = 'aaaaabbbbb1aaaaaabbbbbb2cccccddddd1aaaaabbbbb1aaaaabbbbbccccccdddddd2cccccdddddeeeee1aaaaaabbbbbb2'
+STARTING_STRING = '''static void
+ListboxRedrawRange(listPtr, first, last)
+    register Listbox *listPtr;      /* Information about widget. */
+    int first;              /* Index of first element in list
+                     * that needs to be redrawn. */
+    int last;               /* Index of last element in list
+                     * that needs to be redrawn.  May
+                     * be less than first;
+                     * these just bracket a range. */
+{
+    if ((listPtr->tkwin == NULL) || !Tk_IsMapped(listPtr->tkwin)
+        || (listPtr->flags & REDRAW_PENDING)) {
+    return;
+    }
+    Tk_DoWhenIdle(DisplayListbox, (ClientData) listPtr);
+    listPtr->flags |= REDRAW_PENDING;
+}'''
+SAMPLE_EVERY = 200
+SAMPLE_LIMIT = 200
 SAMPLE_NUMBER = 1
-SOFTMAX_TEMPS = [.4,6]
+SOFTMAX_TEMPS = [.25,.5,.75]
 
 # theano.config.optimizer = 'None'
 # theano.config.compute_test_value = 'raise'
@@ -79,9 +96,7 @@ print "Training NWLSTM with parameters:\
 
 def one_hot(x, dimensions):
     tmp = np.zeros(dimensions)
-
     tmp[x] = 1
-
     return tmp.astype('float32')
 
 def nullOutMinibatch(minibatch, desired_length, desired_size):
@@ -148,6 +163,47 @@ def readFile2(filename):
         startend_positions = [(x+1,y+1) for x,y in startend_positions]
     print "Reached end of file"
 
+def readFile3(filename, char_to_code_dict):
+
+    with open(filename) as f:
+        filestring = f.read()
+
+    np_data = np.zeros((len(filestring), len(char_to_code_dict))).astype('float32')
+
+    c_index=0
+    for c in filestring:
+        np_data[c_index, char_to_code_dict[c]] = 1
+        c_index+=1
+
+
+    minibatches_yielded = 0
+    startend_positions = [(start,start+SEQUENCE_LENGTH) for start in xrange(MINIBATCH_SIZE)]
+
+    end_file = False
+    while True:
+        x_s = []
+        y_s = []
+        for start,end in startend_positions:
+            if (end+1)>=np_data.shape[0]:
+                end_file=True
+                break
+
+            x = np_data[start:end,:]
+            y = np_data[start+1:end+1,:]
+            x_s.append(x)
+            y_s.append(y)
+
+        if end_file: break
+
+        x_s = np.stack(x_s, axis=2)
+        y_s = np.stack(y_s, axis=2)
+
+        yield x_s,y_s
+
+        minibatches_yielded+=1
+        if MAX_MINIBATCHES and minibatches_yielded>=MAX_MINIBATCHES: break
+
+        startend_positions = [(x+MINIBATCH_SIZE,y+MINIBATCH_SIZE) for x,y in startend_positions]
 
 
 def readFile(filename, dictsFile=None, outputDictsToFile=None):
@@ -272,7 +328,6 @@ def main():
     char_to_code_dict, code_to_char_dict, ALPHABET_LENGTH = parseFileForCharacterDicts(DATAFILE)
     print "char_to_code_dict: {0}\ncode_to_char_dict: {1}\n".format(char_to_code_dict, code_to_char_dict)
 
-
     print "Compiling model..."
     if MODEL_FILE != None:
         model = load_model_parameters_lstm(MODEL_FILE)
@@ -297,34 +352,52 @@ def main():
     for epoch in xrange(NEPOCH):
         h_prev = np.zeros((NUM_LAYERS,HIDDEN_DIM,MINIBATCH_SIZE)).astype('float32')
         c_prev = np.zeros((NUM_LAYERS,HIDDEN_DIM,MINIBATCH_SIZE)).astype('float32')
+        stack_prev = np.zeros((NUM_LAYERS,MINIBATCH_SIZE,STACK_HEIGHT,HIDDEN_DIM)).astype('float32')
+        ptrs_to_top_prev = np.zeros((NUM_LAYERS,MINIBATCH_SIZE,STACK_HEIGHT,HIDDEN_DIM)).astype('float32')
+        ptrs_to_top_prev[:,:,0,:] = 1
 
-        for minibatch in readFile2(DATAFILE):
-            #print "Current minibatch: {0}".format([[str(c) for c in seq] for seq in minibatch])
 
-            x = np.dstack([np.asarray([one_hot(char_to_code_dict[c], ALPHABET_LENGTH) for c in seq[:-1]]) for seq in minibatch])
-            y = np.dstack([np.asarray([one_hot(char_to_code_dict[c], ALPHABET_LENGTH) for c in seq[1:]]) for seq in minibatch])
+        # for minibatch in readFile2(DATAFILE):
+        for x,y in readFile3(DATAFILE, char_to_code_dict):
+            
+            # x = np.dstack([np.asarray([one_hot(char_to_code_dict[c], ALPHABET_LENGTH) for c in seq[:-1]]) for seq in minibatch])
+            # y = np.dstack([np.asarray([one_hot(char_to_code_dict[c], ALPHABET_LENGTH) for c in seq[1:]]) for seq in minibatch])
 
 
             if counter%EVAL_LOSS_AFTER==0:
-                # print minibatch
                 if epoch==0: print "Dims of one minibatch: {0}".format(x.shape)
                 t1 = time.time()
-                h_prev,c_prev = model.train_model(x, y, h_prev, c_prev, LEARNING_RATE, softmax_temp)
+
+                if not WANT_STACK:
+                    h_prev,c_prev = model.train_model(x, y, h_prev, c_prev, LEARNING_RATE, softmax_temp)
+                else:
+                    h_prev,c_prev,stack_prev,ptrs_to_top_prev = model.train_model_stack(x, y, h_prev, c_prev, 
+                        stack_prev, ptrs_to_top_prev, LEARNING_RATE, softmax_temp)
+
                 t2 = time.time()
                 if counter%(EVAL_LOSS_AFTER*10)==0: print "One SGD step took: {0:.2f} milliseconds".format((t2 - t1) * 1000.)
 
 
-                loss, l1_loss, l2_loss = model.loss_for_minibatch(x, y, h_prev, c_prev, softmax_temp)
+                if not WANT_STACK:
+                    loss, l1_loss, l2_loss = model.loss_for_minibatch(x, y, h_prev, c_prev, softmax_temp)
+                else:
+                    loss, l1_loss, l2_loss = model.loss_for_minibatch_stack(x, y, h_prev, c_prev, stack_prev, ptrs_to_top_prev, softmax_temp)
+
+
                 losses.append((epoch, loss))
                 dt = datetime.datetime.now().strftime("%m-%d___%H-%M-%S")
                 print "{0}: Loss after examples={1}, epoch={2}:  {3:.0f}    {4:.0f}    {5:.0f}".format(dt, counter, epoch, loss, l1_loss, l2_loss)
                 save_model_parameters_lstm("saved_model_parameters/NWLSTM_savedparameters_{0:.1f}__{1}.npz".format(loss, dt), model)
 
             else:
-                h_prev, c_prev = model.train_model(x, y, h_prev, c_prev, LEARNING_RATE, softmax_temp)
+                if not WANT_STACK:
+                    h_prev,c_prev = model.train_model(x, y, h_prev, c_prev, LEARNING_RATE, softmax_temp)
+                else:
+                    h_prev,c_prev,stack_prev,ptrs_to_top_prev = model.train_model_stack(x, y, h_prev, c_prev, 
+                        stack_prev, ptrs_to_top_prev, LEARNING_RATE, softmax_temp)
 
 
-            if SAMPLE and counter%SAMPLE_EVERY==0:
+            if SAMPLE and (counter!=0) and counter%SAMPLE_EVERY==0:
                 for softmax_temp in SOFTMAX_TEMPS:
                     print "\nSampling sentence with softmax {0}".format(softmax_temp)
                     for _ in xrange(SAMPLE_NUMBER):
