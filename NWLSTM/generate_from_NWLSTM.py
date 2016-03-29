@@ -73,7 +73,7 @@ def generate_sentence(model, starting_string, sample_limit=50, sample_from_distr
         sampled_one_hot = one_hot(sampled_letter, (word_dim,minibatch_dim)) # convert code to one-hot
         new_sentence = np.vstack((new_sentence,sampled_one_hot)) # stack this one-hot onto sentence thus far
 
-        if len(new_sentence)%1000==0: print "".join([code_to_char_dict[np.argmax(x)] for x in new_sentence[:,:,-1]])
+        if (len(new_sentence)-len(starting_string))%100==0: print (len(new_sentence)-len(starting_string))#"".join([code_to_char_dict[np.argmax(x)] for x in new_sentence[:,:,-1]])
 
     sentence_str = [code_to_char_dict[np.argmax(x)] for x in new_sentence[:,:,-1]]
     return sentence_str
@@ -81,9 +81,9 @@ def generate_sentence(model, starting_string, sample_limit=50, sample_from_distr
 
 
 if __name__=="__main__":
-    DATAFILE = "saved_model_parameters/NWLSTM_savedparameters_13971.8__03-16___10-14-39.npz"
-    SAMPLE_LIMIT = 100000
-    SOFTMAX_TEMPERATURES = [.85]#np.linspace(.4, 1, 3)
+    DATAFILE = "saved_model_parameters/NWLSTM_savedparameters_1042549.9__03-29___00-13-44.npz"
+    SAMPLE_LIMIT = 1000
+    SOFTMAX_TEMPERATURES = [.5,.75,1]#np.linspace(.4, 1, 3)
     NUM_SENTENCES = 1
     #STARTING_STRING = '''aaaaabbbbb1aaaaaabbbbbb2cccccddddd1aaaaabbbbb1aaaaabbbbbccccccdddddd2cccccdddddeeeee1aaaaaabbbbbb2'''
     STARTING_STRING = '''/*

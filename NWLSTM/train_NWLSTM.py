@@ -17,8 +17,8 @@ BPTT_TRUNCATE = 50
 # Stack parameters
 WANT_STACK = False
 STACK_HEIGHT = 15
-PUSH_CHAR = '1'
-POP_CHAR = '2'
+PUSH_CHAR = '{'
+POP_CHAR = '}'
 CONTEXT_TO_PUSH = 5
 NULL = 'NULL_TOKEN'
 
@@ -29,21 +29,22 @@ ACTIVATION = 'tanh'
 
 # Optimization parameters
 OPTIMIZATION = 'RMSprop' # RMSprop or SGD
-LEARNING_RATE = .001
+LEARNING_RATE = .01
 DROPOUT = .5
 NEPOCH = 10000
-EVAL_LOSS_AFTER = 100
-L1_REGULARIZATION = .0001
-L2_REGULARIZATION = .01
+EVAL_LOSS_AFTER = 10
+L1_REGULARIZATION = 0.01
+L2_REGULARIZATION = 0.01
 
 # Data source parameters
-#DATAFILE = '../data/tmp.txt'
+# DATAFILE = '../data/tmp.txt'
+# LOSSFILE = '../data/tmp_loss.txt'
 DATAFILE = '../data/simcity.txt'
+LOSSFILE = '../data/simcity_loss.txt'
 MODEL_FILE = None
 
 # Sampling parameters
 SAMPLE = True
-#STARTING_STRING = 'aaaaabbbbb1aaaaaabbbbbb2cccccddddd1aaaaabbbbb1aaaaabbbbbccccccdddddd2cccccdddddeeeee1aaaaaabbbbbb2'
 STARTING_STRING = '''static void
 ListboxRedrawRange(listPtr, first, last)
     register Listbox *listPtr;      /* Information about widget. */
@@ -61,14 +62,16 @@ ListboxRedrawRange(listPtr, first, last)
     Tk_DoWhenIdle(DisplayListbox, (ClientData) listPtr);
     listPtr->flags |= REDRAW_PENDING;
 }'''
-SAMPLE_EVERY = 200
-SAMPLE_LIMIT = 200
+SAMPLE_EVERY = 50
+SAMPLE_LIMIT = 500
 SAMPLE_NUMBER = 1
-SOFTMAX_TEMPS = [.25,.5,.75]
+SOFTMAX_TEMPS = [.5]
 
 # theano.config.optimizer = 'None'
 # theano.config.compute_test_value = 'raise'
 # theano.config.exception_verbosity = 'high'
+
+# theano.config.profile='True'
 
 theano.config.warn_float64 = 'warn'
 theano.config.floatX = 'float32'
@@ -126,44 +129,7 @@ def parseFileForCharacterDicts(filename):
 
     return char_to_code_dict, code_to_char_dict, ALPHABET_LENGTH
 
-def readFrom(filename, a, b):
-  with open(filename) as f:
-    f.seek(a)
-    chars = []
-    for _ in xrange(b-a):
-      c = f.read(1)
-      if not c: break
-      chars.append(c)
-
-    while len(chars)<(b-a):
-        chars.append(NULL)
-
-  return chars
-
-def readFile2(filename):
-    minibatches_yielded = 0
-    startend_positions = [(start,start+SEQUENCE_LENGTH) for start in xrange(MINIBATCH_SIZE)]
-    last_pos = SEQUENCE_LENGTH+MINIBATCH_SIZE
-    while True:
-        with open(filename) as f:
-            f.seek(last_pos-2)
-            c = f.read(1)
-            if not c: break
-            last_pos+=1
-        current_minibatch = []
-        for start,end in startend_positions:
-            current_minibatch.append(readFrom(filename,start,end))
-
-        if len(current_minibatch)<MINIBATCH_SIZE:
-            current_minibatch = nullOutMinibatch(current_minibatch, SEQUENCE_LENGTH, MINIBATCH_SIZE)
-        yield current_minibatch
-        minibatches_yielded+=1
-        if MAX_MINIBATCHES and minibatches_yielded>=MAX_MINIBATCHES: break
-
-        startend_positions = [(x+1,y+1) for x,y in startend_positions]
-    print "Reached end of file"
-
-def readFile3(filename, char_to_code_dict):
+def readFile(filename, char_to_code_dict):
 
     with open(filename) as f:
         filestring = f.read()
@@ -204,34 +170,6 @@ def readFile3(filename, char_to_code_dict):
         if MAX_MINIBATCHES and minibatches_yielded>=MAX_MINIBATCHES: break
 
         startend_positions = [(x+MINIBATCH_SIZE,y+MINIBATCH_SIZE) for x,y in startend_positions]
-
-
-def readFile(filename, dictsFile=None, outputDictsToFile=None):
-    with open(filename, 'rb') as f:
-
-        minibatches_yielded = 0
-        current_minibatch = []
-        current_sequence = []
-        while True:
-            c = f.read(1)
-            if not c: break
-
-
-            current_sequence.append(c)
-
-            if len(current_sequence)>=SEQUENCE_LENGTH:
-                current_minibatch.append(current_sequence) #add this sequence to current minibatch
-                current_sequence = current_sequence[1:]
-                
-                if len(current_minibatch)>=MINIBATCH_SIZE: #next sequence starts a new minibatch
-                    yield current_minibatch
-                   
-                    minibatches_yielded+=1
-                    if MAX_MINIBATCHES and minibatches_yielded>=MAX_MINIBATCHES: break
-                    
-                    current_minibatch = []
-                    #if minibatches_yielded%2000==0: print minibatches_yielded
-                    continue
 
 def readFileWithUnmatchedLefts(filename, dictsFile=None, outputDictsToFile=None):
     with open(filename, 'rb') as f:
@@ -304,24 +242,32 @@ def readFileWithUnmatchedLefts(filename, dictsFile=None, outputDictsToFile=None)
                     current_minibatch = []
                     continue
 
-def readFileGenerator(datafile, want_stack):
-    if not want_stack:
-        return readFile(datafile)
+def calculateLoss(filename, model, counter, epoch):
+    with open(filename) as f:
+        seq = f.read()
+        minibatch = [seq]*MINIBATCH_SIZE
+
+    loss_x = np.dstack([np.asarray([one_hot(model.char_to_code_dict[c], model.word_dim) for c in seq[:-1]]) for seq in minibatch])
+    loss_y = np.dstack([np.asarray([one_hot(model.char_to_code_dict[c], model.word_dim) for c in seq[1:]]) for seq in minibatch])
+
+    softmax_temp = 1
+    h_prev = np.zeros((NUM_LAYERS,HIDDEN_DIM,MINIBATCH_SIZE)).astype('float32')
+    c_prev = np.zeros((NUM_LAYERS,HIDDEN_DIM,MINIBATCH_SIZE)).astype('float32')
+    stack_prev = np.zeros((NUM_LAYERS,MINIBATCH_SIZE,STACK_HEIGHT,HIDDEN_DIM)).astype('float32')
+    ptrs_to_top_prev = np.zeros((NUM_LAYERS,MINIBATCH_SIZE,STACK_HEIGHT,HIDDEN_DIM)).astype('float32')
+    ptrs_to_top_prev[:,:,0,:] = 1
+
+    if not WANT_STACK:
+        loss, l1_loss, l2_loss = model.loss_for_minibatch(loss_x, loss_y, h_prev, c_prev, softmax_temp)
     else:
-        return readFileWithUnmatchedLefts(datafile)
+        loss, l1_loss, l2_loss = model.loss_for_minibatch_stack(loss_x, loss_y, h_prev, c_prev, stack_prev, ptrs_to_top_prev, softmax_temp)
 
-def testreadFile(filename):
-    chars = []
-    with open(filename, 'rb') as f:
-        while True:
-            c = f.read(1)
-            if not c: break
+    loss_per_char = loss / (MINIBATCH_SIZE * len(seq))
 
-            chars.append(c)
+    dt = datetime.datetime.now().strftime("%m-%d___%H-%M-%S")
+    print "{0}: Loss after examples={1}, epoch={2}:  {3:.15f}    {4:.0f}    {5:.0f}".format(dt, counter, epoch, loss_per_char, l1_loss, l2_loss)
+    save_model_parameters_lstm("saved_model_parameters/NWLSTM_savedparameters_{0:.1f}__{1}.npz".format(loss_per_char, dt), model)
 
-            if len(chars)>SEQUENCE_LENGTH:
-                yield [chars]
-                chars = [chars[-1]]
 
 def main():
     print "Parsing for set of characters: {0}\n".format(DATAFILE)
@@ -358,14 +304,14 @@ def main():
 
 
         # for minibatch in readFile2(DATAFILE):
-        for x,y in readFile3(DATAFILE, char_to_code_dict):
+        for x,y in readFile(DATAFILE, char_to_code_dict):
             
             # x = np.dstack([np.asarray([one_hot(char_to_code_dict[c], ALPHABET_LENGTH) for c in seq[:-1]]) for seq in minibatch])
             # y = np.dstack([np.asarray([one_hot(char_to_code_dict[c], ALPHABET_LENGTH) for c in seq[1:]]) for seq in minibatch])
 
 
             if counter%EVAL_LOSS_AFTER==0:
-                if epoch==0: print "Dims of one minibatch: {0}".format(x.shape)
+                if counter==0: print "Dims of one minibatch: {0}".format(x.shape)
                 t1 = time.time()
 
                 if not WANT_STACK:
@@ -383,11 +329,11 @@ def main():
                 else:
                     loss, l1_loss, l2_loss = model.loss_for_minibatch_stack(x, y, h_prev, c_prev, stack_prev, ptrs_to_top_prev, softmax_temp)
 
-
+                calculateLoss(LOSSFILE, model, counter, epoch)
                 losses.append((epoch, loss))
                 dt = datetime.datetime.now().strftime("%m-%d___%H-%M-%S")
                 print "{0}: Loss after examples={1}, epoch={2}:  {3:.0f}    {4:.0f}    {5:.0f}".format(dt, counter, epoch, loss, l1_loss, l2_loss)
-                save_model_parameters_lstm("saved_model_parameters/NWLSTM_savedparameters_{0:.1f}__{1}.npz".format(loss, dt), model)
+                # save_model_parameters_lstm("saved_model_parameters/NWLSTM_savedparameters_{0:.1f}__{1}.npz".format(loss, dt), model)
 
             else:
                 if not WANT_STACK:

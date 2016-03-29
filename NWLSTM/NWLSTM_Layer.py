@@ -74,15 +74,21 @@ class NWLSTM_Layer(object):
             W_hpop_stackgate = np.random.uniform(-.01, .01, (hidden_dim, hidden_dim))
             W_hprev_stackchanges = np.random.uniform(-.01, .01, (hidden_dim, hidden_dim))
             W_hpop_stackchanges = np.random.uniform(-.01, .01, (hidden_dim, hidden_dim))
+            W_hprev_stackforgetgate = np.random.uniform(-.01, .01, (hidden_dim, hidden_dim))
+            W_hpop_stackforgetgate = np.random.uniform(-.01, .01, (hidden_dim, hidden_dim))
             B_stackchanges = np.random.uniform(-.01, .01, (hidden_dim, 1))
             B_stackgate = np.random.uniform(-.01, .01, (hidden_dim, 1))
+            B_stackforgetgate = np.random.uniform(-.01, .01, (hidden_dim, 1))
 
             self.W_hprev_stackgate = theano.shared(name="W_hprev_stackgate"+str(self.layer_num), value=W_hprev_stackgate.astype(theano.config.floatX))
             self.W_hpop_stackgate = theano.shared(name="W_hpop_stackgate"+str(self.layer_num), value=W_hpop_stackgate.astype(theano.config.floatX))
             self.W_hprev_stackchanges = theano.shared(name="W_hprev_stackchanges"+str(self.layer_num), value=W_hprev_stackchanges.astype(theano.config.floatX))
             self.W_hpop_stackchanges = theano.shared(name="W_hpop_stackchanges"+str(self.layer_num), value=W_hpop_stackchanges.astype(theano.config.floatX))
+            self.W_hprev_stackforgetgate = theano.shared(name="W_hprev_stackforgetgate"+str(self.layer_num), value=W_hprev_stackforgetgate.astype(theano.config.floatX))
+            self.W_hpop_stackforgetgate = theano.shared(name="W_hpop_stackforgetgate"+str(self.layer_num), value=W_hpop_stackforgetgate.astype(theano.config.floatX))
             self.B_stackchanges = theano.shared(name='B_stackchanges'+str(self.layer_num), value=B_stackchanges.astype(theano.config.floatX), broadcastable=(False,True))
             self.B_stackgate = theano.shared(name='B_stackgate'+str(self.layer_num), value=B_stackgate.astype(theano.config.floatX), broadcastable=(False,True))
+            self.B_stackforgetgate = theano.shared(name='B_stackforgetgate'+str(self.layer_num), value=B_stackforgetgate.astype(theano.config.floatX), broadcastable=(False,True))
             
         #########################################################
         #########################################################
@@ -95,7 +101,8 @@ class NWLSTM_Layer(object):
 
         if self.want_stack:
             self.params.extend([self.W_hprev_stackgate, self.W_hpop_stackgate, self.B_stackgate,
-                                self.W_hprev_stackchanges, self.W_hpop_stackchanges, self.B_stackchanges])
+                                self.W_hprev_stackchanges, self.W_hpop_stackchanges, self.B_stackchanges,
+                                self.W_hprev_stackforgetgate, self.W_hpop_stackforgetgate, self.B_stackforgetgate])
         #########################################################
         #########################################################
 
@@ -144,10 +151,14 @@ class NWLSTM_Layer(object):
         stack = postpop_stack_values
         ptrs_to_top = postpop_stack_ptrs
 
+
+        stackforget_gate = T.nnet.hard_sigmoid( self.W_hprev_stackforgetgate.dot(h_prev) + self.W_hpop_stackforgetgate.dot(h_popped) + self.B_stackforgetgate )
         stack_gate = T.nnet.hard_sigmoid( self.W_hprev_stackgate.dot(h_prev) + self.W_hpop_stackgate.dot(h_popped) + self.B_stackgate )
         stack_changes = self.activation( self.W_hprev_stackchanges.dot(h_prev) + self.W_hpop_stackchanges.dot(h_popped) + self.B_stackchanges )
-        h_prime = h_prev + stack_gate*stack_changes
+        h_prime = stackforget_gate*h_prev + stack_gate*stack_changes
         # h_prime = self.W_h_prev_pop.dot(h_prev) + self.W_h_stack_pop.dot(h_popped)
+
+        
         #########################################################
         #########################################################
         # Internal LSTM calculations
@@ -190,7 +201,8 @@ def update_stack_for_pop(stack, ptrs_to_top, is_pop):
     updated_stack_values = (1-ptrs_to_top*is_pop)*stack
 
     #popped value for h
-    h_popped = (ptrs_to_top*is_pop)*stack
+    #h_popped = (ptrs_to_top*is_pop)*stack
+    h_popped = ptrs_to_top*stack #always peek at the top of the stack
     h_popped = T.transpose(T.sum(h_popped, axis=1))
 
     return updated_stack_values, updated_stack_ptrs, h_popped
