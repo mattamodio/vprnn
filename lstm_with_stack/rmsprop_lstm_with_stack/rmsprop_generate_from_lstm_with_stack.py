@@ -12,7 +12,7 @@ from rmsprop_utils_lstm_with_stack import *
 from rmsprop_lstm_with_stack import LSTM_with_stack
 
 
-DATAFILE = "lstm_with_stack-theano-500-83-2016-02-18-11-23-58.npz"
+DATAFILE = "lstm_RMSprop-500-81-3.38-2016-02-21-18-45-15.npz"
 
 def one_hot(x, dimensions):
     tmp = np.zeros(dimensions).astype('int32')
@@ -41,14 +41,15 @@ def generate_sentence(model, char_to_code_dict, code_to_char_dict, line_start_to
         
         sampled_one_hot = one_hot(sampled_letter, alphabet_length)
 
-        try:
-            code_to_char_dict[sampled_letter]
-        except:
-            continue
+
+        if sampled_letter not in code_to_char_dict: continue
+        #if code_to_char_dict[sampled_letter] == line_end_token: break
+        if len(new_sentence)%25==0: print len(new_sentence)
+        if len(new_sentence)%100==0: print "\n" + "".join([code_to_char_dict[np.argmax(x)] for x in new_sentence]) + "\n"
 
         new_sentence = np.vstack((new_sentence,sampled_one_hot))
 
-        if code_to_char_dict[sampled_letter] == line_end_token: break
+        
 
     sentence_str = [code_to_char_dict[np.argmax(x)] for x in new_sentence]
     return sentence_str
@@ -80,7 +81,7 @@ if __name__=="__main__":
      
     for i in range(num_sentences):
         sent = []
-        sent = generate_sentence(MODEL, char_to_code_dict, code_to_char_dict, line_start_token, line_end_token, ALPHABET_LENGTH, sample_limit=2000)
+        sent = generate_sentence(MODEL, char_to_code_dict, code_to_char_dict, line_start_token, line_end_token, ALPHABET_LENGTH, sample_limit=500)
         print "".join(sent)
         print
 

@@ -14,13 +14,13 @@ from rmsprop_lstm_with_stack import LSTM_with_stack
 from rmsprop_generate_from_lstm_with_stack import generate_sentence
 
 _HIDDEN_DIM = int(os.environ.get('HIDDEN_DIM', '500'))
-_LEARNING_RATE = float(os.environ.get('LEARNING_RATE', '0.005'))
-_NEPOCH = int(os.environ.get('NEPOCH', '1000'))
+_LEARNING_RATE = float(os.environ.get('LEARNING_RATE', '0.01'))
+_NEPOCH = int(os.environ.get('NEPOCH', '100'))
 _MODEL_FILE = os.environ.get('MODEL_FILE', )
 
-CHARS_TO_TRAIN = 10000
+CHARS_TO_TRAIN = 100
 MINIBATCH_SIZE = 1
-SEQUENCE_LENGTH = 50
+SEQUENCE_LENGTH = 100
 PUSH_CHAR = "<"
 POP_CHAR = ">"
 LINE_START_TOKEN = "LINE_START"
@@ -70,7 +70,7 @@ def train_with_sgd(model, X_train, y_train, learning_rate=0.001, nepoch=1, evalu
         # For each training example...
         for i in range(len(y_train)):
             # One SGD step
-            print num_examples_seen
+            #print num_examples_seen
             model.train_model(X_train[i], y_train[i], learning_rate)
             num_examples_seen += 1
 
@@ -105,7 +105,7 @@ def readFile(filename, dictsFile=None, outputDictsToFile=None):
                 line = ast.literal_eval(line)
                 dicts.append(line)
         char_to_code_dict, code_to_char_dict = dicts
-        ALPHABET_LENGTH = len(char_to_code_dict.keys())+1
+        
     else:
         print "Created encoding dictionaries with {0} characters: {1}".format(ALPHABET_LENGTH, char_to_code_dict.keys())
         with open(outputDictsToFile, 'w+') as f:
@@ -113,6 +113,8 @@ def readFile(filename, dictsFile=None, outputDictsToFile=None):
             f.write("\n")
             f.write(str(code_to_char_dict))
         print "Wrote character-to-code dicts to {0}".format(outputDictsToFile)
+
+    ALPHABET_LENGTH = len(char_to_code_dict.keys())+1
 
     return c_list, char_to_code_dict, code_to_char_dict, ALPHABET_LENGTH
 
@@ -151,7 +153,8 @@ def main():
     push_vec = one_hot(char_to_code_dict[PUSH_CHAR], ALPHABET_LENGTH)
     pop_vec = one_hot(char_to_code_dict[POP_CHAR], ALPHABET_LENGTH)
 
-    model = LSTM_with_stack(ALPHABET_LENGTH, hidden_dim=_HIDDEN_DIM, minibatch_size=MINIBATCH_SIZE, bptt_truncate=SEQUENCE_LENGTH, push_vec=push_vec, pop_vec=pop_vec)
+    model = LSTM_with_stack(ALPHABET_LENGTH, hidden_dim=_HIDDEN_DIM, minibatch_size=MINIBATCH_SIZE, bptt_truncate=SEQUENCE_LENGTH,
+                            sequence_length=SEQUENCE_LENGTH, push_vec=push_vec, pop_vec=pop_vec)
 
     t1 = time.time()
     model.train_model(X_train[0], y_train[0], _LEARNING_RATE)

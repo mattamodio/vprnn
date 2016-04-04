@@ -1,0 +1,11 @@
+\begin{document}
+\title{A Sample \LaTeX \;Article}
+\author{John Doe}
+\date{\today}
+\maketitle
+\abstract{This a sample \LaTeX document that explains some of the \LaTeX commands}
+
+\section{Introduction}
+\LaTeX \; is a markup language designed and implemented by \textbf{Leslie Lamport}, based on \textbf{Donald E. Knuth}'s typesetting language \TeX.  The markup in the source file of a \LaTeX \; document my appear somewhat challenging, but the compiled result of the document is certainly a pleasing rendering of the mark-up material.\\
+
+\LaTeX \; was built on \TeX 's foundation.  An article is divided into \emph{logical units}, including an abstract, various sections and subsections, theorems, and a bibliography.  The logical units are typed independently of one another.  Once all the units have been typed, \LaTeX \, controls the \emph{placement} and \emph{formating} of these elements. \LaTeX \; automatically numbers the sections, theorems, and equations in your article, and builds the cross-references.  If any changes is made to the article, it automatically renumbers its various parts and rebuilds the cross-references.\\

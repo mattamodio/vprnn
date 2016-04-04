@@ -12,15 +12,14 @@ from generate_from_NWLSTM import generate_sentence
 MAX_MINIBATCHES = False
 MINIBATCH_SIZE = 100
 SEQUENCE_LENGTH = 100 #SEQUENCE_LENGTH>=MINIBATCH_SIZE REQUIRED
-BPTT_TRUNCATE = 50
+BPTT_TRUNCATE = -1
 
 # Stack parameters
 WANT_STACK = False
 STACK_HEIGHT = 15
-PUSH_CHAR = '{'
-POP_CHAR = '}'
-CONTEXT_TO_PUSH = 5
 NULL = 'NULL_TOKEN'
+PUSH_CHAR = NULL
+POP_CHAR = NULL
 
 # Layer parameters
 HIDDEN_DIM = 512
@@ -29,11 +28,11 @@ ACTIVATION = 'tanh'
 
 # Optimization parameters
 OPTIMIZATION = 'RMSprop' # RMSprop or SGD
-LEARNING_RATE = .01
+LEARNING_RATE = .00001
 DROPOUT = .5
-NEPOCH = 10000
-EVAL_LOSS_AFTER = 10
-L1_REGULARIZATION = 0.01
+NEPOCH = 1000
+EVAL_LOSS_AFTER = 100
+L1_REGULARIZATION = 0.0001
 L2_REGULARIZATION = 0.01
 
 # Data source parameters
@@ -41,7 +40,9 @@ L2_REGULARIZATION = 0.01
 # LOSSFILE = '../data/tmp_loss.txt'
 DATAFILE = '../data/simcity.txt'
 LOSSFILE = '../data/simcity_loss.txt'
-MODEL_FILE = None
+# DATAFILE = '../data/tex.txt'
+# LOSSFILE = '../data/tex_loss.txt'
+MODEL_FILE = 'saved_model_parameters/NWLSTM_savedparameters_7985.0__03-17___11-26-16.npz'
 
 # Sampling parameters
 SAMPLE = True
@@ -61,9 +62,38 @@ ListboxRedrawRange(listPtr, first, last)
     }
     Tk_DoWhenIdle(DisplayListbox, (ClientData) listPtr);
     listPtr->flags |= REDRAW_PENDING;
-}'''
-SAMPLE_EVERY = 50
-SAMPLE_LIMIT = 500
+# }'''
+# STARTING_STRING='''\\begin{problem}{0}
+# THIS PROBLEM CONCERNS THE TABLE
+
+# \\begin{table}[h] 
+# \\begin{center}
+# \\addtolength{\\tabcolsep}{1mm}
+# \\renewcommand{\\arraystretch}{1.2}
+# \\begin{tabular}{|c|r|r|r|r|r|}
+# \hline
+# \hline
+# $t$    & \phantom{0}1.0 & \phantom{0}1.2 
+#                    &  1.4 &  1.6 &  1.8 \\
+# \hline
+# $f(t)$ & 3.0 & 7.0 & 10.0 & 12.0 & 13.0 \\
+# \hline
+# \hline
+# \end{tabular}
+# \end{center}
+# \end{table}
+
+# \\vfill
+# \end{problem}
+
+
+# % problem with vertical table
+# \\begin{problem}{0}
+# THIS PROBLEM CONCERNS THE TABLE
+
+# \\begin{table}[h] '''
+SAMPLE_EVERY = 100
+SAMPLE_LIMIT = 250
 SAMPLE_NUMBER = 1
 SOFTMAX_TEMPS = [.5]
 
@@ -265,8 +295,8 @@ def calculateLoss(filename, model, counter, epoch):
     loss_per_char = loss / (MINIBATCH_SIZE * len(seq))
 
     dt = datetime.datetime.now().strftime("%m-%d___%H-%M-%S")
-    print "{0}: Loss after examples={1}, epoch={2}:  {3:.15f}    {4:.0f}    {5:.0f}".format(dt, counter, epoch, loss_per_char, l1_loss, l2_loss)
-    save_model_parameters_lstm("saved_model_parameters/NWLSTM_savedparameters_{0:.1f}__{1}.npz".format(loss_per_char, dt), model)
+    print "{0}: Loss after examples={1}, epoch={2}:  {3:.15f}    {4:.0f}    {5:.0f}".format(dt, counter, epoch, loss_per_char*MINIBATCH_SIZE*SEQUENCE_LENGTH, l1_loss*L1_REGULARIZATION, l2_loss*L2_REGULARIZATION)
+    save_model_parameters_lstm("saved_model_parameters/NWLSTM_savedparameters_{0:.1f}__{1}.npz".format(loss_per_char*MINIBATCH_SIZE*SEQUENCE_LENGTH, dt), model)
 
 
 def main():
@@ -324,15 +354,15 @@ def main():
                 if counter%(EVAL_LOSS_AFTER*10)==0: print "One SGD step took: {0:.2f} milliseconds".format((t2 - t1) * 1000.)
 
 
-                if not WANT_STACK:
-                    loss, l1_loss, l2_loss = model.loss_for_minibatch(x, y, h_prev, c_prev, softmax_temp)
-                else:
-                    loss, l1_loss, l2_loss = model.loss_for_minibatch_stack(x, y, h_prev, c_prev, stack_prev, ptrs_to_top_prev, softmax_temp)
+                # if not WANT_STACK:
+                #     loss, l1_loss, l2_loss = model.loss_for_minibatch(x, y, h_prev, c_prev, softmax_temp)
+                # else:
+                #     loss, l1_loss, l2_loss = model.loss_for_minibatch_stack(x, y, h_prev, c_prev, stack_prev, ptrs_to_top_prev, softmax_temp)
 
                 calculateLoss(LOSSFILE, model, counter, epoch)
-                losses.append((epoch, loss))
-                dt = datetime.datetime.now().strftime("%m-%d___%H-%M-%S")
-                print "{0}: Loss after examples={1}, epoch={2}:  {3:.0f}    {4:.0f}    {5:.0f}".format(dt, counter, epoch, loss, l1_loss, l2_loss)
+                # losses.append((epoch, loss))
+                # dt = datetime.datetime.now().strftime("%m-%d___%H-%M-%S")
+                # print "{0}: Loss after examples={1}, epoch={2}:  {3:.0f}    {4:.0f}    {5:.0f}".format(dt, counter, epoch, loss, l1_loss, l2_loss)
                 # save_model_parameters_lstm("saved_model_parameters/NWLSTM_savedparameters_{0:.1f}__{1}.npz".format(loss, dt), model)
 
             else:

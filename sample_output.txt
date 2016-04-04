@@ -1,0 +1,250 @@
+ListboxRedrawRange(listPtr, first, last)
+    register Listbox *listPtr;      /* Information about widget. */
+    int first;              /* Index of first element in list
+                     * that needs to be redrawn. */
+    int last;               /* Index of last element in list
+                     * that needs to be redrawn.  May
+                     * be less than first;
+                     * these just bracket a range. */
+{
+    if ((listPtr->tkwin == NULL) || !Tk_IsMapped(listPtr->tkwin)
+        || (listPtr->flags & REDRAW_PENDING)) {
+    return;
+    }
+    Tk_DoWhenIdle(DisplayListbox, (ClientData) listPtr);
+    listPtr->flags |= REDRAW_PENDING;
+}
+
+=======================================================================
+=======================================================================
+=======================================================================
+After 1000 Iterations:
+
+Sampling sentence with softmax 0.25
+        * Ne-----------------------------------------
+
+       ir * che      * Pere  ie aneetare  ne =
+     *
+    * Nes   = NPL-
+ *  in trr retere =
+            *  reetere nore (cre =   teretare * 
+  
+
+Sampling sentence with softmax 0.5
+    /   /  Ceatpereek,
+
+     T in irerte feptrh * it inteed teop dhr in thretes>, th * Ie;
+    	Pire-iet regreferet rhte
+
+     * pemata,
+    raome.
+      Neep   M> chare =aregp)
+	 * chmrettstete = I-_
+
+Sampling sentence with softmax 0.75
+  / depimnpd *rfzesaf;
+
+	    -Ttere re us
+ *
+	eretanes, = IP
+W
+
+
+    NaLa
+ b
+  peranneabsecmtA;} -);	 p b-tyPnvvh}
+    trfelm "nte pPiL >re)amo)f afte
+ ie MGLe chet * ipetaren0
+
+		   {(rngnl, p
+
+
+=======================================================================
+=======================================================================
+=======================================================================
+After 2000 iterations:
+
+Sampling sentence with softmax 0.25
+
+        fer = TCl_AetVar(i*terp, argPtr[0], store the if argPtr[!] 0) {
+        cont bare the (for at uate interp, argPtr[0], (char *) NULL);
+            if (ingent
+                *   
+    }
+        }
+    }
+        ir (frr = TCL_
+
+Sampling sentence with softmax 0.5
+    }
+    char ** NNLL))
+    }
+
+    }
+etsexinterp = TCL_AeAEREFS;
+        if (pletsrce "argPtr[-], (interp;     char **tArg);
+    }
+
+    if (rosuat 3 sphot f the ange in the the O nistEre interp, "insd p *= ' " 
+
+Sampling sentence with softmax 0.75
+}
+
+
+/*
+ *-----------------------
+  / /
+    T*lSSexCT de+resul of oibePue =or |Ulr = aistrx;
+         spce = prinfarg conmintAsp--, xenshe charit) the boiater_ srestrt;
+            ergP;
+    }
+    f rexc;  cesu-se+-;
+    s
+
+=======================================================================
+=======================================================================
+=======================================================================
+After 3000 iterations:
+
+Sampling sentence with softmax 0.25
+
+
+/*
+ * Side effoct table to table the Tcl_rashetarcheth the in the the ant
+ *  bresk the table toe to the tae cashe the table table table table toble ta the table the be the tablePtr);
+        if (retur
+
+Sampling sentence with softmax 0.5
+
+
+/*
+    *------------------------------------------------------------------------------------------------------------------------------
+ *
+ * Tcl_AeshEhtry */
+{
+    if (angc == 't') {
+        if (carhe
+
+Sampling sentence with softmax 0.75
+
+    ubse NEL_ccT(gistEapre dochre betasibde table etstrif Viln the enverdTytels to talse  this thy forded ar is the buhi it sore" be #arlePtc) {
+    }   Utlr *p nsPnrry, proc nestotish
+ *  sit inss vab_h
+
+
+
+
+
+
+
+
+
+=======================================================================
+=======================================================================
+=======================================================================
+Longer sample:
+
+ /*
+ *----------------------------------------------------------------------
+ *
+ * Tk_SetGrid --
+ *
+ *  This procedure is invoked by a widget when it wishes to set a grid
+ *  coordinate system that controls the size of a top-level window.
+ *  It provides a C interface equivalent to the "wm grid" command and
+ *  is usually asscoiated with the -setgrid option.
+ *
+ * Results:
+ *  None.
+ *
+ * Side effects:
+ *  Grid-related information will be passed to the window manager, so
+ *  that the top-level window associated with tkwin will resize on
+ *  even grid units.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+Tk_SetGrid(tkwin, reqWidth, reqHeight, widthInc, heightInc)
+    Tk_Window tkwin;        /* Token for window.  New window mgr info
+                 * will be posted for the top-level window
+                 * associated with this window. */
+    int reqWidth;       /* Width (in grid units) corresponding to
+                 * the requested geometry for tkwin. */
+    int reqHeight;      /* Height (in grid units) corresponding to
+                 * the requested geometry for tkwin. */
+    int widthInc, heightInc;    /* Pixel increments corresponding to a
+                 * change of one grid unit. */
+{
+    TkWindow *winPtr = (TkWindow *) tkwin;
+    register WmInfo *wmPtr;
+
+    /*
+     * Find the top-level window for tkwin, plus the window manager
+     * information.
+     */
+
+    while (!(winPtr->flags & TK_TOP_LEVEL)) {
+    winPtr = winPtr->parentPtr;
+    }
+    wmPtr = winPtr->wmInfoPtr;
+=======================================================================
+start of sample:
+        orde";
+    vetwabye = "+-);
+        nesults:
+ *  The hworarar date whiut resulte ps plabile. */
+    rcturn TCL_NARMAL,  DPtr->exmEsuryipqatNim stane nepmPnrPe) &|kingd.
+ *
+ * Result = 6stertPtr->nextat(TCl_(ORMAF9Isterp, strcus;
+        }
+    pdFullesg = cofter result);
+    }
+        On **lPtl, abcets asdw(onder ar NskIns. Telse.
+ *
+ * Side if endelEetatlenticisten and nemore.
+ *
+ * Result neptane to masc &etwer *fre spluct    d    carmated. */
+    result = Tcl Inderpesmatains)
+    return TCL);
+sew5 *veldLPtr->nextst charingving).
+    else = onterepsrac(# string word)); af snt p entPtr
+ *  expPtr;
+        }
+        bntarCetmend *ferteCets;
+    cost = prost2irhPtr;
+    endCkal;
+        }
+    chir *cld-;
+    } elsP = caspiss = (strlat(Sndcksetod, dCNNIfOS_Is that[Sm = bstPtr;
+    }
+    if (ssgurPtr->puPtr->nustoud {
+        presult != interp->prestD == intogy1;
+        ist != 0) {
+    }
+    }
+    conStrlee(avgecnt:
+            fvrle = ?vatBinseull;
+        Sstsreen(hasdste1 Nolmand the return;
+            \tterp;
+    }
+    resubt = interp;
+    }
+    }
+        regist il thag a piths to thif becyqed the result)
+
+        if (*ev_jefthan Ratuems;
+    }
+        retuln de = them:
+    coseoC'EVPdc;
+        }
+
+    } else {
+        pkty = par'e vetmengf, vedwed,
+    *   petNans thit char *ter torpareFisc in sressstred
+ *  sof-agroxo hertry af forfdifuld no thes the umrecaret. */
+    chae *paet dist = werdPdPmed *  , wlich)
+            casacChardestfyr[q9Ptr->nurPtr->vabkent f\ist \Q"V;
+        if (chpe corrandPtr) {
+        ntithe >p +*stor = efreved) == these

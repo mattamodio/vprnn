@@ -15,11 +15,12 @@ from theano.printing import pydotprint
 
 class LSTM_with_stack:
     
-    def __init__(self, word_dim, hidden_dim=100, minibatch_size=1, bptt_truncate=-1, push_vec=None, pop_vec=None):
+    def __init__(self, word_dim, hidden_dim=100, minibatch_size=1, bptt_truncate=-1, sequence_length=10, push_vec=None, pop_vec=None):
         self.word_dim = word_dim
         self.hidden_dim = hidden_dim
         self.minibatch_size = minibatch_size
         self.bptt_truncate = bptt_truncate
+        self.sequence_length = sequence_length
 
         if push_vec==None:
             PUSH = np.zeros((word_dim, minibatch_size))
@@ -58,11 +59,16 @@ class LSTM_with_stack:
         W_x_g_2 = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
         W_h_g_2 = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
 
-        W_h_push = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
+        #W_h_push = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
         W_h_stack_pop = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
         W_h_prev_pop = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
         stack = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, minibatch_size, 15))
         ptr_to_top = 0
+
+        W_h_stack_pop_2 = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
+        W_h_prev_pop_2 = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, hidden_dim))
+        stack_2 = np.random.uniform(-np.sqrt(1./word_dim), np.sqrt(1./word_dim), (hidden_dim, minibatch_size, 15))
+        ptr_to_top_2 = 0
 
         # Theano: Created shared variables
         self.W_x_i = theano.shared(name='W_x_i', value=W_x_i.astype(theano.config.floatX))
@@ -91,12 +97,23 @@ class LSTM_with_stack:
         self.stack = theano.shared(name='stack', value=stack.astype(theano.config.floatX))
         self.ptr_to_top = theano.shared(name='ptr_to_top', value=ptr_to_top)
 
+        self.W_h_stack_pop_2 = theano.shared(name="W_h_stack_pop_2", value=W_h_stack_pop_2.astype(theano.config.floatX))
+        self.W_h_prev_pop_2 = theano.shared(name="W_h_prev_pop_2", value=W_h_prev_pop_2.astype(theano.config.floatX))
+        self.stack_2 = theano.shared(name='stack_2', value=stack.astype(theano.config.floatX))
+        self.ptr_to_top_2 = theano.shared(name='ptr_to_top_2', value=ptr_to_top_2)
+
 
         
         self.params = []
-        self.params.extend([self.W_x_i,self.W_h_i,self.W_x_o,self.W_h_o,self.W_x_f,self.W_h_f,self.W_x_g,self.W_h_g,\
-                            self.W_x_i_2,self.W_h_i_2,self.W_x_o_2,self.W_h_o_2,self.W_x_f_2,self.W_h_f_2,self.W_x_g_2,\
-                            self.W_h_g_2,self.W_hy,self.W_h_stack_pop,self.W_h_prev_pop])
+        self.params.extend([self.W_x_i,self.W_h_i,self.W_x_o,
+                            self.W_h_o,self.W_x_f,self.W_h_f,
+                            self.W_x_g,self.W_h_g,
+                            self.W_x_i_2,self.W_h_i_2,self.W_x_o_2,
+                            self.W_h_o_2,self.W_x_f_2,self.W_h_f_2,
+                            self.W_x_g_2,self.W_h_g_2,
+                            self.W_hy,
+                            self.W_h_stack_pop,self.W_h_prev_pop,
+                            self.W_h_stack_pop_2,self.W_h_prev_pop_2])
         #self.params.append(self.W_h_push)
         self.updates = {}
         for param in self.params:
@@ -108,14 +125,6 @@ class LSTM_with_stack:
         self.__theano_build__()
     
     def __theano_build__(self):
-        W_x_i,W_h_i,W_x_o,W_h_o,W_x_f,W_h_f,W_x_g,W_h_g,W_hy = self.W_x_i,self.W_h_i,self.W_x_o,self.W_h_o,self.W_x_f,self.W_h_f,self.W_x_g,self.W_h_g,self.W_hy
-        
-        W_x_i_2,W_h_i_2,W_x_o_2,W_h_o_2,W_x_f_2,W_h_f_2,W_x_g_2,W_h_g_2 = self.W_x_i_2,self.W_h_i_2,self.W_x_o_2,self.W_h_o_2,self.W_x_f_2,self.W_h_f_2,self.W_x_g_2,self.W_h_g_2
-        
-
-        W_h_prev_pop, W_h_stack_pop = self.W_h_prev_pop, self.W_h_stack_pop
-        #W_h_push = self.W_h_push
-
         x = T.tensor3('x')#, dtype='float64')
         y = T.tensor3('y')#, dtype='float64')
         learning_rate = T.scalar('learning_rate')
@@ -131,6 +140,7 @@ class LSTM_with_stack:
             # c_t_prev.tag.test_value = np.random.uniform(0,1, (self.hidden_dim,self.minibatch_size)).astype('float64')
 
 
+            # Map input to {push,pop,internal}
             argm_xt = T.argmax(x_t, axis=0)[0]
             argm_push = T.argmax(self.PUSH, axis=0)[0]
             argm_pop = T.argmax(self.POP, axis=0)[0]
@@ -138,57 +148,46 @@ class LSTM_with_stack:
             is_pop = T.eq(argm_xt, argm_pop)
 
 
+            # Layer 1
             candidate_to_push = h_t_prev
             pushed_stack = T.set_subtensor(self.stack[:,:,self.ptr_to_top+1], candidate_to_push)
-
-
             top_of_stack = self.stack[:,:,self.ptr_to_top]
-            candidate_to_pop = T.tanh( W_h_prev_pop.dot(h_t_prev) + W_h_stack_pop.dot(top_of_stack) )
+            candidate_to_pop = T.tanh( self.W_h_prev_pop.dot(h_t_prev) + self.W_h_stack_pop.dot(top_of_stack) )
+            self.stack = ifelse(is_push, pushed_stack, ifelse( is_pop,self.stack,self.stack))
+            self.ptr_to_top = ifelse(is_push, self.ptr_to_top+1, ifelse( is_pop, self.ptr_to_top-1, self.ptr_to_top))
+            h_prime = ifelse(is_push,h_t_prev, ifelse( is_pop, candidate_to_pop, h_t_prev))
 
-            self.stack = ifelse( is_push,
-                            pushed_stack,
-                            ifelse( is_pop,
-                                    self.stack,
-                                    self.stack
-                                    )
-                            )
 
-            self.ptr_to_top = ifelse( is_push,
-                                 self.ptr_to_top+1,
-                                 ifelse( is_pop,
-                                         self.ptr_to_top-1,
-                                         self.ptr_to_top
-                                         )
-                                 )
-
-            h_prime = ifelse( is_push,
-                              h_t_prev,
-                              ifelse( is_pop,
-                                      candidate_to_pop,
-                                      h_t_prev
-                                      )
-                              )
-
-            i = T.nnet.hard_sigmoid( W_x_i.dot(x_t) + W_h_i.dot(h_prime) )
-            o = T.nnet.hard_sigmoid( W_x_o.dot(x_t) + W_h_o.dot(h_prime) )
-            f = T.nnet.hard_sigmoid( W_x_f.dot(x_t) + W_h_f.dot(h_prime) )
-            g = T.tanh( W_x_g.dot(x_t) + W_h_g.dot(h_prime) )
+            i = T.nnet.hard_sigmoid( self.W_x_i.dot(x_t) + self.W_h_i.dot(h_prime) )
+            o = T.nnet.hard_sigmoid( self.W_x_o.dot(x_t) + self.W_h_o.dot(h_prime) )
+            f = T.nnet.hard_sigmoid( self.W_x_f.dot(x_t) + self.W_h_f.dot(h_prime) )
+            g = T.tanh( self.W_x_g.dot(x_t) + self.W_h_g.dot(h_prime) )
 
             c_t = f*c_t_prev + i*g
             h_t = o*T.tanh(c_t)
 
-            i_2 = T.nnet.hard_sigmoid( W_x_i_2.dot(h_t_2_prev) + W_h_i_2.dot(h_t) )
-            o_2 = T.nnet.hard_sigmoid( W_x_o_2.dot(h_t_2_prev) + W_h_o_2.dot(h_t) )
-            f_2 = T.nnet.hard_sigmoid( W_x_f_2.dot(h_t_2_prev) + W_h_f_2.dot(h_t) )
-            g_2 = T.tanh( W_x_g_2.dot(h_t_2_prev) + W_h_g_2.dot(h_t) )
+
+            # Layer 2
+            candidate_to_push_2 = h_t_2_prev
+            pushed_stack_2 = T.set_subtensor(self.stack_2[:,:,self.ptr_to_top_2+1], candidate_to_push_2)
+            top_of_stack_2 = self.stack_2[:,:,self.ptr_to_top_2]
+            candidate_to_pop_2 = T.tanh( self.W_h_prev_pop_2.dot(h_t_2_prev) + self.W_h_stack_pop_2.dot(top_of_stack_2) )
+            self.stack_2 = ifelse(is_push, pushed_stack_2, ifelse(is_pop, self.stack_2, self.stack_2))
+            self.ptr_to_top_2 = ifelse(is_push, self.ptr_to_top_2+1, ifelse(is_pop, self.ptr_to_top_2-1, self.ptr_to_top_2))
+            h_prime_2 = ifelse(is_push, h_t_2_prev, ifelse(is_pop, candidate_to_pop_2, h_t_2_prev))
+
+            i_2 = T.nnet.hard_sigmoid( self.W_x_i_2.dot(h_t) + self.W_h_i_2.dot(h_prime_2) )
+            o_2 = T.nnet.hard_sigmoid( self.W_x_o_2.dot(h_t) + self.W_h_o_2.dot(h_prime_2) )
+            f_2 = T.nnet.hard_sigmoid( self.W_x_f_2.dot(h_t) + self.W_h_f_2.dot(h_prime_2) )
+            g_2 = T.tanh( self.W_x_g_2.dot(h_t) + self.W_h_g_2.dot(h_prime_2) )
 
             c_t_2 = f_2*c_t_2_prev + i_2*g_2
             h_t_2 = o_2*T.tanh(c_t_2)
 
 
-            o_t = T.transpose( T.nnet.softmax( T.transpose(W_hy.dot(h_t_2)) ) )
+            # Output
+            o_t = T.transpose( T.nnet.softmax( T.transpose(self.W_hy.dot(h_t_2)) ) )
 
-            #theano.printing.Print('o_t')(o_t)
 
             return [o_t, h_t, h_t_2, c_t, c_t_2]
 
@@ -206,7 +205,16 @@ class LSTM_with_stack:
             truncate_gradient=self.bptt_truncate)
         
 
-        o_error = T.sum(T.nnet.categorical_crossentropy(o, y))
+
+        # def error_last_x_steps(o,y,x):
+        #     error = 0
+        #     for i in xrange(1,x+1):
+        #         error += T.sum(T.nnet.categorical_crossentropy(o[:][:][-i], y[:][:][-i]))
+        #     return error
+
+        #o_error = error_last_x_steps(o,y, self.sequence_length/2)
+        #o_error = T.sum(T.nnet.categorical_crossentropy(o[:][:][-1], y))
+        o_error = T.sum(T.nnet.categorical_crossentropy(o[:][:][-1], y[:][:][-1]))
         
         
         # Assign functions

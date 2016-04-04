@@ -78,7 +78,7 @@ class NWLSTM_Layer(object):
             W_hpop_stackforgetgate = np.random.uniform(-.01, .01, (hidden_dim, hidden_dim))
             B_stackchanges = np.random.uniform(-.01, .01, (hidden_dim, 1))
             B_stackgate = np.random.uniform(-.01, .01, (hidden_dim, 1))
-            B_stackforgetgate = np.random.uniform(-.01, .01, (hidden_dim, 1))
+            B_stackforgetgate = np.random.uniform(.99, 1, (hidden_dim, 1))
 
             self.W_hprev_stackgate = theano.shared(name="W_hprev_stackgate"+str(self.layer_num), value=W_hprev_stackgate.astype(theano.config.floatX))
             self.W_hpop_stackgate = theano.shared(name="W_hpop_stackgate"+str(self.layer_num), value=W_hpop_stackgate.astype(theano.config.floatX))
@@ -109,20 +109,9 @@ class NWLSTM_Layer(object):
     def forward_prop(self, x, h_prev, c_prev, is_push, is_pop, is_null):
         #########################################################
         #########################################################
-        # Perform push/pops as necessary, updating stack and stack pointers
-        if self.want_stack:
-            postpush_stack_values, postpush_stack_ptrs = update_stack_for_push(self.stack, self.ptrs_to_top, is_push, h_prev)
-            postpop_stack_values, postpop_stack_ptrs, h_popped = update_stack_for_pop(postpush_stack_values, postpush_stack_ptrs, is_pop)
-
-            self.stack = postpop_stack_values
-            self.ptrs_to_top = postpop_stack_ptrs
-
-            h_prime = self.W_h_prev_pop.dot(h_prev) + self.W_h_stack_pop.dot(h_popped)
-        else:
-            h_prime = h_prev
-        #########################################################
-        #########################################################
         # Internal LSTM calculations
+        h_prime = h_prev
+
         i = T.nnet.hard_sigmoid( self.W_x_i.dot(x) + self.W_h_i.dot(h_prime) + self.B_i )
         o = T.nnet.hard_sigmoid( self.W_x_o.dot(x) + self.W_h_o.dot(h_prime) + self.B_o )
         f = T.nnet.sigmoid( self.W_x_f.dot(x) + self.W_h_f.dot(h_prime) + self.B_f )
@@ -132,12 +121,7 @@ class NWLSTM_Layer(object):
         # c = c_prev + i*g
         h = o*self.activation(c_prev)
 
-        if self.want_stack:
-            # h = T.switch(T.eq(is_null,1), h*0., h)
-            # c = T.switch(T.eq(is_null,1), c*0., c)
-            return h, c
-        else:
-            return h, c
+        return h, c
         #########################################################
         #########################################################
     
@@ -158,7 +142,7 @@ class NWLSTM_Layer(object):
         h_prime = stackforget_gate*h_prev + stack_gate*stack_changes
         # h_prime = self.W_h_prev_pop.dot(h_prev) + self.W_h_stack_pop.dot(h_popped)
 
-        
+
         #########################################################
         #########################################################
         # Internal LSTM calculations

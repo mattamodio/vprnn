@@ -17,6 +17,8 @@ import theano
 
 def generate_sentence(model, starting_string, sample_limit=50, sample_from_distribution=True, softmax_temp=1):
 
+    char_to_code_dict, code_to_char_dict, word_dim, minibatch_dim = model.char_to_code_dict, model.code_to_char_dict, model.word_dim, model.minibatch_dim
+
     def one_hot(x, dimensions):
         tmp = np.zeros(dimensions).astype('float32')
         tmp[x,:] = 1
@@ -30,35 +32,25 @@ def generate_sentence(model, starting_string, sample_limit=50, sample_from_distr
               return index
         return len(probs)-1
 
-    char_to_code_dict, code_to_char_dict, word_dim, minibatch_dim = model.char_to_code_dict, model.code_to_char_dict, model.word_dim, model.minibatch_dim
-    
     # We start the sentence with the start token
-    new_sentence = one_hot(char_to_code_dict[starting_string[0]], (word_dim,minibatch_dim))
+    new_sentence = one_hot( model.getCode(starting_string[0]), (word_dim,minibatch_dim))
     for c in starting_string[1:]:
-        c_one_hot = one_hot(char_to_code_dict[c], (word_dim,minibatch_dim))
+        c_one_hot = one_hot( model.getCode(c), (word_dim,minibatch_dim))
         new_sentence = np.vstack((new_sentence,c_one_hot))
    
     # Repeat until we reach the sample limit
     h_init = np.zeros((len(model.layers), model.hidden_dim, minibatch_dim)).astype('float32')
     c_init = np.zeros((len(model.layers), model.hidden_dim, minibatch_dim)).astype('float32')
-    stack_init = np.zeros((len(model.layers),minibatch_dim,model.stack_height,model.hidden_dim)).astype('float32')
-    ptrs_to_top_init = np.zeros((len(model.layers),minibatch_dim,model.stack_height,model.hidden_dim)).astype('float32')
-    ptrs_to_top_init[:,:,0,:] = 1
 
     all_but_last_letter = new_sentence[:-1,:,:].reshape(new_sentence.shape[0]-1,new_sentence.shape[1],new_sentence.shape[2])
     
-    if not model.want_stack:
-        _, h_prev, c_prev = model.forward_propagation(all_but_last_letter, h_init, c_init, softmax_temp) # get probability of next character
-    else:
-        _, h_prev, c_prev, stack_prev, ptrs_to_top_prev = model.forward_propagation_stack(all_but_last_letter, h_init, c_init, stack_init, ptrs_to_top_init, softmax_temp)
+    _, h_prev, c_prev = model.forward_propagation(all_but_last_letter, h_init, c_init, softmax_temp) # get probability of next character
 
     while len(new_sentence)<(len(starting_string)+sample_limit):
         last_letter = new_sentence[-1,:,:].reshape(1,new_sentence.shape[1],new_sentence.shape[2])
 
-        if not model.want_stack:
-            next_char_probs, h_prev, c_prev = model.forward_propagation(last_letter, h_prev, c_prev, softmax_temp) # get probability of next character
-        else:
-            next_char_probs, h_prev, c_prev, stack_prev, ptrs_to_top_prev = model.forward_propagation_stack(last_letter, h_prev, c_prev, stack_prev, ptrs_to_top_prev, softmax_temp)
+        next_char_probs, h_prev, c_prev = model.forward_propagation(last_letter, h_prev, c_prev, softmax_temp) # get probability of next character
+
         next_char_probs = [_ for _ in next_char_probs[-1,:,0]]
         #print [(code_to_char_dict[i],round(x,2)) for i,x in enumerate(next_char_probs)]
 
@@ -68,12 +60,12 @@ def generate_sentence(model, starting_string, sample_limit=50, sample_from_distr
             sampled_letter = np.argmax(next_char_probs)
 
         if sampled_letter not in code_to_char_dict: continue
-        if code_to_char_dict[sampled_letter]=='NULL_TOKEN': continue
+        if code_to_char_dict[sampled_letter]=='NULL': continue
 
         sampled_one_hot = one_hot(sampled_letter, (word_dim,minibatch_dim)) # convert code to one-hot
         new_sentence = np.vstack((new_sentence,sampled_one_hot)) # stack this one-hot onto sentence thus far
 
-        if (len(new_sentence)-len(starting_string))%100==0: print (len(new_sentence)-len(starting_string))#"".join([code_to_char_dict[np.argmax(x)] for x in new_sentence[:,:,-1]])
+        #if (len(new_sentence)-len(starting_string))%100==0: print (len(new_sentence)-len(starting_string))#"".join([code_to_char_dict[np.argmax(x)] for x in new_sentence[:,:,-1]])
 
     sentence_str = [code_to_char_dict[np.argmax(x)] for x in new_sentence[:,:,-1]]
     return sentence_str
@@ -81,11 +73,10 @@ def generate_sentence(model, starting_string, sample_limit=50, sample_from_distr
 
 
 if __name__=="__main__":
-    DATAFILE = "saved_model_parameters/NWLSTM_savedparameters_18698.2__03-31___11-00-16.npz"
-    SAMPLE_LIMIT = 500
-    SOFTMAX_TEMPERATURES = [.5]#np.linspace(.4, 1, 3)
+    DATAFILE = "saved_model_parameters/LSTM_savedparameters_206187.9__04-04___12-24-03.npz"
+    SAMPLE_LIMIT = 2000
+    SOFTMAX_TEMPERATURES = [.2,.3,.4,.5]#np.linspace(.4, 1, 3)
     NUM_SENTENCES = 1
-    #STARTING_STRING = '''aaaaabbbbb1aaaaaabbbbbb2cccccddddd1aaaaabbbbb1aaaaabbbbbccccccdddddd2cccccdddddeeeee1aaaaaabbbbbb2'''
     STARTING_STRING = '''static char *
 regpiece(flagp)
 int *flagp;
